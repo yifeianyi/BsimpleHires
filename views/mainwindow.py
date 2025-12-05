@@ -11,7 +11,8 @@ class MainWindow(QWidget):
         uic.loadUi("ui/main.ui", self)
 
         self.workPage = None
-        self.p1.clicked.connect(self.gotoWorkPage)
+        self.ImportButton.clicked.connect(self.gotoWorkPage)
+        # self.VerButton.clicked.connect(self.gotoVersionPage) 
 
     def gotoWorkPage(self):
         # 创建 WorkPage

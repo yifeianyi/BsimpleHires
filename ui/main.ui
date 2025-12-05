@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>213</width>
-    <height>223</height>
+    <width>217</width>
+    <height>231</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -15,14 +15,14 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
-    <widget class="QPushButton" name="p1">
+    <widget class="QPushButton" name="ImportButton">
      <property name="text">
       <string>导入文件</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="QPushButton" name="p2">
+    <widget class="QPushButton" name="VerButton">
      <property name="text">
       <string>版本信息</string>
      </property>
