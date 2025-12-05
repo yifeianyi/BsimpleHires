@@ -63,7 +63,7 @@
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="ImportFiles">
+      <widget class="QPushButton" name="ImportButton">
        <property name="text">
         <string>导入文件</string>
        </property>
