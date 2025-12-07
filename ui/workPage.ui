@@ -43,7 +43,22 @@
      </column>
      <column>
       <property name="text">
-       <string>当前音频格式</string>
+       <string>分辨率</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>帧率</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>视频格式</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>音频格式</string>
       </property>
      </column>
      <column>
