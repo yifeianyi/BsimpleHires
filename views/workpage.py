@@ -10,6 +10,7 @@ from models import FileInfo, FileManager
 from services.ffmpeg_service import FFmpegService
 from services.converter_service import ConversionProgress
 from workers.conversion_worker import ConversionThreadManager
+from views.progress_dialog import ProgressDialog
 
 
 class WorkPage(QWidget):
@@ -38,6 +39,9 @@ class WorkPage(QWidget):
 
         # 转换线程管理器
         self.conversion_manager = ConversionThreadManager()
+        
+        # 进度对话框
+        self.progress_dialog = None
 
         # 检查ffmpeg是否可用
         if not FFmpegService.check_ffmpeg_available():
@@ -184,9 +188,9 @@ class WorkPage(QWidget):
         
         print(f"[WorkPage] 用户确认开始转换")
         
-        # 创建进度对话框
+        # 创建并显示进度对话框
         print(f"[WorkPage] 创建进度对话框")
-        self.create_progress_dialog()
+        self.show_progress_dialog(len(selected_files))
         
         # 启动转换
         print(f"[WorkPage] 启动转换管理器")
@@ -200,6 +204,7 @@ class WorkPage(QWidget):
         
         if not success:
             print(f"[WorkPage] 错误: 无法启动转换任务")
+            self.progress_dialog.close()
             QMessageBox.critical(self, "错误", "无法启动转换任务")
         else:
             print(f"[WorkPage] 转换任务已成功启动")
@@ -219,63 +224,54 @@ class WorkPage(QWidget):
                         selected_files.append(path_item.text())
         return selected_files
     
-    def create_progress_dialog(self):
-        """创建进度显示对话框"""
-        self.progress_dialog = QWidget(self)
-        self.progress_dialog.setWindowTitle("转换进度")
-        self.progress_dialog.setFixedSize(400, 150)
-        self.progress_dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+    def show_progress_dialog(self, total_files: int):
+        """显示进度对话框"""
+        self.progress_dialog = ProgressDialog(self)
         
-        layout = QVBoxLayout()
+        # 连接取消信号
+        self.progress_dialog.cancel_requested.connect(self.on_cancel_conversion)
         
-        # 当前文件标签
-        self.current_file_label = QLabel("准备开始...")
-        layout.addWidget(self.current_file_label)
+        # 设置窗口标题显示任务数量
+        self.progress_dialog.setWindowTitle(f"转换进度 - {total_files} 个文件")
         
-        # 总体进度
-        self.total_progress_label = QLabel("总体进度: 0/0")
-        layout.addWidget(self.total_progress_label)
-        
-        # 进度条
-        self.progress_bar = QProgressBar()
-        layout.addWidget(self.progress_bar)
-        
-        # 状态标签
-        self.status_label = QLabel("状态: 等待中")
-        layout.addWidget(self.status_label)
-        
-        self.progress_dialog.setLayout(layout)
+        # 使用show()而不是exec()来避免阻塞
         self.progress_dialog.show()
+        print(f"[WorkPage] 进度对话框已显示，共 {total_files} 个文件")
+    
+    def on_cancel_conversion(self):
+        """处理用户取消转换请求"""
+        print(f"[WorkPage] 用户请求取消转换")
+        
+        reply = QMessageBox.question(
+            self,
+            "确认取消",
+            "确定要取消当前转换任务吗？\n已转换的文件将保留。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            print(f"[WorkPage] 用户确认取消转换")
+            # 停止转换
+            self.conversion_manager.stop_conversion()
+            
+            # 更新进度对话框状态
+            if self.progress_dialog:
+                self.progress_dialog.set_conversion_error("用户取消")
+                self.progress_dialog.cancelButton.setText("关闭")
+        else:
+            print(f"[WorkPage] 用户取消取消操作")
     
     def on_conversion_progress(self, progress_info: ConversionProgress):
         """转换进度更新"""
         print(f"[WorkPage] 进度更新: {progress_info.current_file} - {progress_info.current_progress:.1f}% - {progress_info.status}")
         
-        # 更新当前文件
-        self.current_file_label.setText(f"当前文件: {progress_info.current_file}")
-        
-        # 更新总体进度
-        self.total_progress_label.setText(
-            f"总体进度: {progress_info.completed_files}/{progress_info.total_files}"
-        )
-        
-        # 更新进度条
-        total_progress = (progress_info.completed_files / progress_info.total_files) * 100
-        total_progress += (progress_info.current_progress / progress_info.total_files)
-        self.progress_bar.setValue(int(total_progress))
-        
-        # 更新状态
-        self.status_label.setText(f"状态: {progress_info.status}")
-        
-        # 如果有错误，显示错误信息
-        if progress_info.error_message:
-            print(f"[WorkPage] 错误信息: {progress_info.error_message}")
-            self.status_label.setText(f"状态: {progress_info.error_message}")
+        # 更新进度对话框
+        if self.progress_dialog:
+            self.progress_dialog.update_progress(progress_info)
     
     def on_conversion_finished(self, results: list[bool]):
         """转换完成"""
         print(f"[WorkPage] 转换完成回调，结果: {results}")
-        self.progress_dialog.close()
         
         # 统计结果
         success_count = sum(results)
@@ -283,7 +279,11 @@ class WorkPage(QWidget):
         
         print(f"[WorkPage] 转换统计: 成功 {success_count}/{total_count}")
         
-        # 显示结果
+        # 更新进度对话框
+        if self.progress_dialog:
+            self.progress_dialog.set_conversion_complete(success_count, total_count)
+        
+        # 显示结果消息
         if success_count == total_count:
             print(f"[WorkPage] 所有文件转换成功")
             QMessageBox.information(
@@ -302,7 +302,12 @@ class WorkPage(QWidget):
     def on_conversion_error(self, error_msg: str):
         """转换错误"""
         print(f"[WorkPage] 转换错误回调: {error_msg}")
-        self.progress_dialog.close()
+        
+        # 更新进度对话框
+        if self.progress_dialog:
+            self.progress_dialog.set_conversion_error(error_msg)
+        
+        # 显示错误消息
         QMessageBox.critical(self, "转换错误", error_msg)
     
     def showSettings(self):

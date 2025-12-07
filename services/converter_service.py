@@ -21,7 +21,8 @@ class ConverterService:
     
     @staticmethod
     def convert_to_pcm_mov(input_path: str, output_path: str, 
-                          progress_callback: Optional[Callable[[float], None]] = None) -> bool:
+                          progress_callback: Optional[Callable[[float], None]] = None,
+                          stop_event: Optional[threading.Event] = None) -> bool:
         """
         将视频文件转换为MOV容器，保留视频流，音频转换为PCM 24bit格式
         
@@ -29,6 +30,7 @@ class ConverterService:
             input_path: 输入文件路径
             output_path: 输出文件路径
             progress_callback: 进度回调函数
+            stop_event: 停止事件，用户取消时会被设置
             
         Returns:
             转换是否成功
@@ -38,6 +40,9 @@ class ConverterService:
         print(f"[转换服务] 转换模式: 保留视频流，音频转换为PCM 24bit")
         
         try:
+            if stop_event and stop_event.is_set():
+                print("[转换服务] 检测到取消请求，跳过本次转换")
+                return False
             # 确保输出目录存在
             output_dir = os.path.dirname(output_path)
             os.makedirs(output_dir, exist_ok=True)
@@ -72,6 +77,15 @@ class ConverterService:
             print("[转换服务] 开始解析ffmpeg输出...")
             
             for line in process.stdout:
+                if stop_event and stop_event.is_set():
+                    print("[转换服务] 收到取消请求，尝试终止ffmpeg进程")
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+                    return False
                 print(f"[ffmpeg输出] {line.strip()}")
                 
                 if progress_callback:
@@ -99,6 +113,15 @@ class ConverterService:
             
             # 等待进程完成
             print("[转换服务] 等待进程完成...")
+            if stop_event and stop_event.is_set():
+                print("[转换服务] 收到取消请求，终止等待")
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                return False
             return_code = process.wait()
             print(f"[转换服务] 进程返回码: {return_code}")
             
@@ -125,7 +148,8 @@ class ConverterService:
     
     @staticmethod
     def batch_convert(input_files: List[str], output_dir: str,
-                     progress_callback: Optional[Callable[[ConversionProgress], None]] = None) -> List[bool]:
+                     progress_callback: Optional[Callable[[ConversionProgress], None]] = None,
+                     stop_event: Optional[threading.Event] = None) -> List[bool]:
         """
         批量转换文件
         
@@ -148,6 +172,12 @@ class ConverterService:
             progress_callback(progress_info)
         
         for i, input_path in enumerate(input_files):
+            if stop_event and stop_event.is_set():
+                print("[批量转换] 检测到取消请求，提前结束")
+                progress_info.status = "已取消"
+                if progress_callback:
+                    progress_callback(progress_info)
+                break
             print(f"[批量转换] 处理第 {i+1}/{len(input_files)} 个文件: {input_path}")
             
             # 检查输入文件是否存在
@@ -158,7 +188,6 @@ class ConverterService:
             
             # 更新进度信息
             progress_info.current_file = os.path.basename(input_path)
-            progress_info.completed_files = i
             progress_info.current_progress = 0.0
             progress_info.status = "转换中"
             progress_info.error_message = ""
@@ -192,7 +221,8 @@ class ConverterService:
             
             results.append(success)
             
-            # 更新完成状态
+            # 更新已完成文件数量和完成状态
+            progress_info.completed_files = i + 1  # 当前文件已处理完成
             if progress_callback:
                 progress_callback(progress_info)
         
