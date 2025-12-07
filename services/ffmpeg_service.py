@@ -72,7 +72,7 @@ class FFmpegService:
             'size': None,
             'audio_format': None,
             'video_format': None,
-            'bit_rate': None,
+            'bit_rate': None,  # 音频码率
             'sample_rate': None,
             'channels': None,
             'resolution': None,
@@ -83,7 +83,6 @@ class FFmpegService:
         format_info = data.get('format', {})
         info['duration'] = float(format_info.get('duration', 0)) if format_info.get('duration') else None
         info['size'] = int(format_info.get('size', 0)) if format_info.get('size') else None
-        info['bit_rate'] = int(format_info.get('bit_rate', 0)) if format_info.get('bit_rate') else None
         
         # 从streams中获取详细信息
         streams = data.get('streams', [])
@@ -94,6 +93,10 @@ class FFmpegService:
                 info['audio_format'] = stream.get('codec_name')
                 info['sample_rate'] = int(stream.get('sample_rate', 0)) if stream.get('sample_rate') else None
                 info['channels'] = int(stream.get('channels', 0)) if stream.get('channels') else None
+                # 获取音频码率
+                audio_bit_rate = stream.get('bit_rate')
+                if audio_bit_rate:
+                    info['bit_rate'] = int(audio_bit_rate)
                 
             elif codec_type == 'video':
                 info['video_format'] = stream.get('codec_name')

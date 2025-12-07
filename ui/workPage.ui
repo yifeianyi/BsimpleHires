@@ -66,6 +66,11 @@
        <string>采样率</string>
       </property>
      </column>
+     <column>
+      <property name="text">
+       <string>音频码率</string>
+      </property>
+     </column>
     </widget>
    </item>
    <item>

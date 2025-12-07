@@ -28,6 +28,7 @@ class WorkPage(QWidget):
         "vformat":   {"index": 6, "title": "视频格式",  "align": Qt.AlignmentFlag.AlignCenter},
         "aformat":   {"index": 7, "title": "音频格式",  "align": Qt.AlignmentFlag.AlignCenter},
         "sample_rate": {"index": 8, "title": "采样率",   "align": Qt.AlignmentFlag.AlignCenter},
+        "bit_rate":  {"index": 9, "title": "音频码率",  "align": Qt.AlignmentFlag.AlignCenter},
     }
 
     def __init__(self):
@@ -132,6 +133,10 @@ class WorkPage(QWidget):
         # 采样率
         text = f"{info.sample_rate} Hz" if info.sample_rate else "-"
         self._set_cell(row, "sample_rate", text)
+
+        # 码率
+        text = f"{info.bit_rate/1000:.0f} kbps" if info.bit_rate else "-"
+        self._set_cell(row, "bit_rate", text)
 
     # ======================================================
     # 格式转换功能
