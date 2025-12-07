@@ -6,12 +6,12 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>944</width>
-    <height>415</height>
+    <width>940</width>
+    <height>407</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Form</string>
+   <string>BHires</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -63,7 +63,7 @@
      </column>
      <column>
       <property name="text">
-       <string>位置</string>
+       <string>采样率</string>
       </property>
      </column>
     </widget>

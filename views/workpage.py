@@ -27,7 +27,7 @@ class WorkPage(QWidget):
         "fps":       {"index": 5, "title": "帧率",      "align": Qt.AlignmentFlag.AlignCenter},
         "vformat":   {"index": 6, "title": "视频格式",  "align": Qt.AlignmentFlag.AlignCenter},
         "aformat":   {"index": 7, "title": "音频格式",  "align": Qt.AlignmentFlag.AlignCenter},
-        "path":      {"index": 8, "title": "位置",      "align": Qt.AlignmentFlag.AlignLeft},
+        "sample_rate": {"index": 8, "title": "采样率",   "align": Qt.AlignmentFlag.AlignCenter},
     }
 
     def __init__(self):
@@ -129,8 +129,9 @@ class WorkPage(QWidget):
         text = info.audio_format if info.audio_format else "-"
         self._set_cell(row, "aformat", text)
 
-        # 路径
-        self._set_cell(row, "path", info.filepath)
+        # 采样率
+        text = f"{info.sample_rate} Hz" if info.sample_rate else "-"
+        self._set_cell(row, "sample_rate", text)
 
     # ======================================================
     # 格式转换功能
@@ -223,10 +224,9 @@ class WorkPage(QWidget):
             if widget:
                 checkbox = widget.findChild(QCheckBox)
                 if checkbox and checkbox.isChecked():
-                    # 获取文件路径
-                    path_item = self.tableWidget.item(row, self.COLS["path"]["index"])
-                    if path_item:
-                        selected_files.append(path_item.text())
+                    # 从FileInfo对象获取文件路径
+                    if row < len(self.fileManager.files):
+                        selected_files.append(self.fileManager.files[row].filepath)
         return selected_files
     
     def show_progress_dialog(self, total_files: int):
