@@ -3,6 +3,8 @@ import os
 import threading
 from typing import Callable, Optional, List
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 
 
 class ConversionProgress:
@@ -14,6 +16,7 @@ class ConversionProgress:
         self.current_progress = 0.0  # 当前文件进度 0-100
         self.status = "等待中"  # 等待中/转换中/已完成/出错
         self.error_message = ""
+        self.active_threads = 0  # 当前活跃线程数
 
 
 class ConverterService:
@@ -149,92 +152,130 @@ class ConverterService:
     @staticmethod
     def batch_convert(input_files: List[str], output_dir: str,
                      progress_callback: Optional[Callable[[ConversionProgress], None]] = None,
-                     stop_event: Optional[threading.Event] = None) -> List[bool]:
+                     stop_event: Optional[threading.Event] = None,
+                     max_workers: int = 2) -> List[bool]:
         """
-        批量转换文件
+        批量转换文件（多线程版本）
         
         Args:
             input_files: 输入文件路径列表
             output_dir: 输出目录
             progress_callback: 总进度回调函数
+            stop_event: 停止事件
+            max_workers: 最大并发线程数
             
         Returns:
             每个文件转换是否成功的结果列表
         """
-        print(f"[批量转换] 开始批量转换，共 {len(input_files)} 个文件")
+        print(f"[批量转换] 开始多线程批量转换，共 {len(input_files)} 个文件，最大并发数: {max_workers}")
         print(f"[批量转换] 输出目录: {output_dir}")
         
-        results = []
+        # 确保输出目录存在
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # 初始化进度信息
         progress_info = ConversionProgress()
         progress_info.total_files = len(input_files)
+        progress_info.status = "准备中"
         
         if progress_callback:
             progress_callback(progress_info)
         
-        for i, input_path in enumerate(input_files):
+        # 创建结果列表，保持与输入文件的顺序一致
+        results = [False] * len(input_files)
+        
+        # 用于跟踪完成情况
+        completed_count = 0
+        completed_lock = threading.Lock()
+        
+        def process_file(file_index: int, input_path: str) -> tuple[int, bool]:
+            """处理单个文件的函数"""
             if stop_event and stop_event.is_set():
-                print("[批量转换] 检测到取消请求，提前结束")
-                progress_info.status = "已取消"
-                if progress_callback:
-                    progress_callback(progress_info)
-                break
-            print(f"[批量转换] 处理第 {i+1}/{len(input_files)} 个文件: {input_path}")
+                print(f"[多线程转换] 检测到取消请求，跳过文件: {input_path}")
+                return file_index, False
+            
+            print(f"[多线程转换] 开始处理文件 {file_index+1}/{len(input_files)}: {input_path}")
             
             # 检查输入文件是否存在
             if not os.path.exists(input_path):
-                print(f"[批量转换] 错误: 输入文件不存在: {input_path}")
-                results.append(False)
-                continue
-            
-            # 更新进度信息
-            progress_info.current_file = os.path.basename(input_path)
-            progress_info.current_progress = 0.0
-            progress_info.status = "转换中"
-            progress_info.error_message = ""
-            
-            if progress_callback:
-                progress_callback(progress_info)
+                print(f"[多线程转换] 错误: 输入文件不存在: {input_path}")
+                return file_index, False
             
             # 生成输出文件名
             input_name = Path(input_path).stem
             output_path = os.path.join(output_dir, f"{input_name}.mov")
-            print(f"[批量转换] 输出路径: {output_path}")
+            print(f"[多线程转换] 输出路径: {output_path}")
             
-            # 单文件进度回调
+            # 单文件进度回调（线程安全）
+            current_progress = {"value": 0.0}
             def file_progress(p):
-                progress_info.current_progress = p
-                if progress_callback:
-                    progress_callback(progress_info)
+                current_progress["value"] = p
             
             # 执行转换
             success = ConverterService.convert_to_pcm_mov(
-                input_path, output_path, file_progress
+                input_path, output_path, file_progress, stop_event
             )
             
-            if success:
-                progress_info.status = "已完成"
-                print(f"[批量转换] 文件转换成功: {input_path}")
+            return file_index, success
+        
+        # 使用线程池执行转换
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任务
+            future_to_index = {
+                executor.submit(process_file, i, file_path): i 
+                for i, file_path in enumerate(input_files)
+            }
+            
+            progress_info.status = "转换中"
+            progress_info.active_threads = min(max_workers, len(input_files))
+            
+            # 处理完成的任务
+            for future in as_completed(future_to_index):
+                if stop_event and stop_event.is_set():
+                    print("[多线程转换] 检测到取消请求，停止处理新任务")
+                    break
+                
+                file_index, success = future.result()
+                
+                # 更新结果
+                with completed_lock:
+                    results[file_index] = success
+                    completed_count += 1
+                    
+                    # 更新进度信息
+                    progress_info.completed_files = completed_count
+                    progress_info.current_file = os.path.basename(input_files[file_index])
+                    progress_info.current_progress = 100.0 if success else 0.0
+                    progress_info.active_threads = sum(1 for f in future_to_index if not f.done())
+                    
+                    if success:
+                        progress_info.status = "转换中"
+                        progress_info.error_message = ""
+                    else:
+                        progress_info.status = "部分文件转换失败"
+                        progress_info.error_message = f"转换失败: {input_files[file_index]}"
+                    
+                    if progress_callback:
+                        progress_callback(progress_info)
+                    
+                    print(f"[多线程转换] 文件 {file_index+1} 处理完成，成功: {success}")
+        
+        # 检查是否被取消
+        if stop_event and stop_event.is_set():
+            progress_info.status = "已取消"
+        else:
+            success_count = sum(results)
+            if success_count == len(results):
+                progress_info.status = "全部完成"
             else:
-                progress_info.status = "出错"
-                progress_info.error_message = f"转换失败: {input_path}"
-                print(f"[批量转换] 文件转换失败: {input_path}")
-            
-            results.append(success)
-            
-            # 更新已完成文件数量和完成状态
-            progress_info.completed_files = i + 1  # 当前文件已处理完成
-            if progress_callback:
-                progress_callback(progress_info)
+                progress_info.status = "部分完成"
+                progress_info.error_message = f"成功: {success_count}/{len(results)}"
         
-        # 全部完成
-        progress_info.status = "全部完成"
-        progress_info.current_progress = 100.0
-        success_count = sum(results)
-        print(f"[批量转换] 批量转换完成！成功: {success_count}/{len(results)}")
-        
+        progress_info.active_threads = 0
         if progress_callback:
             progress_callback(progress_info)
         
+        print(f"[多线程转换] 批量转换完成，结果: {results}")
         return results
     
     @staticmethod

@@ -36,8 +36,9 @@ class ProgressDialog(QDialog):
         self.currentFileLabel.setText(f"当前文件: {progress_info.current_file}")
         
         # 更新总体进度
+        active_threads_text = f" ({progress_info.active_threads} 线程)" if hasattr(progress_info, 'active_threads') and progress_info.active_threads > 0 else ""
         self.totalProgressLabel.setText(
-            f"总体进度: {progress_info.completed_files}/{progress_info.total_files}"
+            f"总体进度: {progress_info.completed_files}/{progress_info.total_files}{active_threads_text}"
         )
         
         # 计算总体进度百分比

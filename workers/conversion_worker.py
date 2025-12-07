@@ -1,6 +1,7 @@
 from PyQt6.QtCore import QObject, pyqtSignal, QThread
 from typing import List, Optional
 import os
+import threading
 
 from services.converter_service import ConverterService, ConversionProgress
 
@@ -13,10 +14,11 @@ class ConversionWorker(QObject):
     finished = pyqtSignal(list)  # 转换完成，传递结果列表
     error = pyqtSignal(str)  # 错误信号
     
-    def __init__(self, input_files: List[str], output_dir: str):
+    def __init__(self, input_files: List[str], output_dir: str, max_workers: int = 2):
         super().__init__()
         self.input_files = input_files
         self.output_dir = output_dir
+        self.max_workers = max_workers
         self._is_running = False
     
     def run(self):
@@ -51,11 +53,13 @@ class ConversionWorker(QObject):
                     self.progress_updated.emit(progress_info)
             
             # 执行批量转换
-            print(f"[工作线程] 开始执行批量转换...")
+            print(f"[工作线程] 开始执行多线程批量转换，最大并发数: {self.max_workers}")
             results = ConverterService.batch_convert(
                 self.input_files, 
                 self.output_dir,
-                progress_callback
+                progress_callback,
+                stop_event=threading.Event(),  # 创建停止事件
+                max_workers=self.max_workers
             )
             
             print(f"[工作线程] 批量转换完成，结果: {results}")
@@ -89,7 +93,7 @@ class ConversionThreadManager:
     
     def start_conversion(self, input_files: List[str], output_dir: str,
                         progress_callback=None, finished_callback=None, 
-                        error_callback=None) -> bool:
+                        error_callback=None, max_workers: int = 2) -> bool:
         """
         启动转换任务
         
@@ -99,11 +103,12 @@ class ConversionThreadManager:
             progress_callback: 进度回调函数
             finished_callback: 完成回调函数
             error_callback: 错误回调函数
+            max_workers: 最大并发线程数
             
         Returns:
             是否成功启动
         """
-        print(f"[线程管理器] 请求启动转换任务")
+        print(f"[线程管理器] 请求启动多线程转换任务，最大并发数: {max_workers}")
         print(f"[线程管理器] 输入文件: {input_files}")
         print(f"[线程管理器] 输出目录: {output_dir}")
         
@@ -115,7 +120,7 @@ class ConversionThreadManager:
         # 创建工作线程
         print(f"[线程管理器] 创建新的工作线程")
         self.current_thread = QThread()
-        self.current_worker = ConversionWorker(input_files, output_dir)
+        self.current_worker = ConversionWorker(input_files, output_dir, max_workers)
         self.current_worker.moveToThread(self.current_thread)
         
         # 连接信号

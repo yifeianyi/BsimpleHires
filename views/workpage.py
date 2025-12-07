@@ -193,13 +193,18 @@ class WorkPage(QWidget):
         self.show_progress_dialog(len(selected_files))
         
         # 启动转换
-        print(f"[WorkPage] 启动转换管理器")
+        print(f"[WorkPage] 启动多线程转换管理器")
+        # 根据文件数量动态设置并发数，最多4个线程
+        max_workers = min(4, max(2, len(selected_files) // 2))
+        print(f"[WorkPage] 使用并发线程数: {max_workers}")
+        
         success = self.conversion_manager.start_conversion(
             selected_files,
             output_dir,
             progress_callback=self.on_conversion_progress,
             finished_callback=self.on_conversion_finished,
-            error_callback=self.on_conversion_error
+            error_callback=self.on_conversion_error,
+            max_workers=max_workers
         )
         
         if not success:
