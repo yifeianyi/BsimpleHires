@@ -6,6 +6,7 @@ from typing import Callable, Optional, List
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
+from .ffmpeg_service import FFmpegService
 
 
 class ConversionProgress:
@@ -46,6 +47,7 @@ class ConverterService:
                           stop_event: Optional[threading.Event] = None) -> bool:
         """
         将视频文件转换为MOV容器，保留视频流，音频转换为PCM 24bit格式
+        对于采样率48000的视频，保持48000采样率不变
         
         Args:
             input_path: 输入文件路径
@@ -69,6 +71,11 @@ class ConverterService:
             os.makedirs(output_dir, exist_ok=True)
             print(f"[转换服务] 确保输出目录存在: {output_dir}")
             
+            # 获取文件信息，检查采样率
+            file_info = FFmpegService.get_file_info(input_path)
+            sample_rate = file_info.get('sample_rate') if file_info else None
+            print(f"[转换服务] 检测到采样率: {sample_rate} Hz")
+            
             # 构建ffmpeg命令 - 保留视频流，只转换音频为PCM 24bit
             ffmpeg_path = os.path.join(ConverterService._get_ffmpeg_path(), 'ffmpeg.exe')
             cmd = [
@@ -76,10 +83,23 @@ class ConverterService:
                 '-i', input_path,  # 输入文件
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'pcm_s24le',  # 音频转换为PCM 24bit little-endian
+            ]
+            
+            # 对于采样率小于48000的视频，转换为48000；大于等于48000的保持原采样率
+            if sample_rate is not None and sample_rate >= 48000:
+                cmd.extend(['-ar', str(sample_rate)])  # 保持原采样率
+                print(f"[转换服务] 保持原采样率 {sample_rate} Hz")
+            elif sample_rate is not None and sample_rate < 48000:
+                cmd.extend(['-ar', '48000'])  # 转换为48000采样率
+                print(f"[转换服务] 将采样率 {sample_rate} Hz 转换为 48000 Hz")
+            else:
+                print(f"[转换服务] 采样率信息获取失败，使用ffmpeg默认处理")
+            
+            cmd.extend([
                 '-f', 'mov',  # MOV容器格式
                 '-y',  # 覆盖输出文件
                 output_path
-            ]
+            ])
             
             print(f"[转换服务] 执行命令: {' '.join(cmd)}")
             
