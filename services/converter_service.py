@@ -1,5 +1,6 @@
 import subprocess
 import os
+import sys
 import threading
 from typing import Callable, Optional, List
 from pathlib import Path
@@ -24,9 +25,20 @@ class ConverterService:
     
     @staticmethod
     def _get_ffmpeg_path():
-        """获取本地ffmpeg路径"""
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        """返回 ffmpeg 目录的路径"""
+        if getattr(sys, 'frozen', False):
+            # 打包后的环境
+            if hasattr(sys, '_MEIPASS'):
+                # PyInstaller临时目录
+                base_dir = sys._MEIPASS
+            else:
+                # 直接运行exe文件
+                base_dir = os.path.dirname(sys.executable)
+        else:
+            # 开发环境
+            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         return os.path.join(base_dir, 'ffmpeg')
+
     
     @staticmethod
     def convert_to_pcm_mov(input_path: str, output_path: str, 

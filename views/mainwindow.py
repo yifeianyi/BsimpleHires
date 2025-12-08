@@ -3,16 +3,19 @@ from PyQt6 import uic
 from PyQt6.QtWidgets import QWidget
 
 from views.workpage import WorkPage
+from ui.UI_main import Ui_MainWindow
 
 
 class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
-        uic.loadUi("ui/main.ui", self)
+        # uic.loadUi("ui/main.ui", self)
+        self.ui = Ui_MainWindow()
+        self.ui.setupUi(self)
 
         self.workPage = None
-        self.ImportButton.clicked.connect(self.gotoWorkPage)
-        # self.VerButton.clicked.connect(self.gotoVersionPage) 
+        self.ui.ImportButton.clicked.connect(self.gotoWorkPage)
+        # self.ui.VerButton.clicked.connect(self.gotoVersionPage) 
 
     def gotoWorkPage(self):
         # 创建 WorkPage

@@ -1,7 +1,20 @@
 from PyQt6 import uic
 from PyQt6.QtWidgets import QDialog
 from PyQt6.QtCore import Qt, pyqtSignal
+import sys
+import os
 from services.converter_service import ConversionProgress
+
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
+    try:
+        # PyInstaller 创建临时文件夹，将路径存储在 _MEIPASS 中
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # 开发环境，使用当前工作目录
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
 
 
 class ProgressDialog(QDialog):
@@ -12,7 +25,7 @@ class ProgressDialog(QDialog):
     
     def __init__(self, parent=None):
         super().__init__(parent)
-        uic.loadUi("ui/ProgressBar.ui", self)
+        uic.loadUi(get_resource_path("ui/ProgressBar.ui"), self)
         
         # 不设置窗口模态，允许后台转换继续进行
         # self.setWindowModality(Qt.WindowModality.ApplicationModal)

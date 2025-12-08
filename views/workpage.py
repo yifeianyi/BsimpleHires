@@ -5,12 +5,25 @@ from PyQt6.QtWidgets import (
     QProgressBar, QLabel, QVBoxLayout
 )
 from PyQt6.QtCore import Qt, QThread
+import sys
+import os
 
 from models import FileInfo, FileManager
 from services.ffmpeg_service import FFmpegService
 from services.converter_service import ConversionProgress
 from workers.conversion_worker import ConversionThreadManager
 from views.progress_dialog import ProgressDialog
+
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
+    try:
+        # PyInstaller 创建临时文件夹，将路径存储在 _MEIPASS 中
+        base_path = sys._MEIPASS
+    except AttributeError:
+        # 开发环境，使用当前工作目录
+        base_path = os.path.abspath(".")
+    
+    return os.path.join(base_path, relative_path)
 
 
 class WorkPage(QWidget):
@@ -33,7 +46,7 @@ class WorkPage(QWidget):
 
     def __init__(self):
         super().__init__()
-        uic.loadUi("ui/workPage.ui", self)
+        uic.loadUi(get_resource_path("ui/workPage.ui"), self)
 
         # 后端数据管理器
         self.fileManager = FileManager()
@@ -160,8 +173,8 @@ class WorkPage(QWidget):
             return
         
         # 打印选中的文件列表
-        for i, file in enumerate(selected_files):
-            print(f"[WorkPage] 选中文件 {i+1}: {file}")
+        # for i, file in enumerate(selected_files):
+        #     print(f"[WorkPage] 选中文件 {i+1}: {file}")
         
         # 选择输出目录
         print(f"[WorkPage] 请求用户选择输出目录")
@@ -216,8 +229,8 @@ class WorkPage(QWidget):
             print(f"[WorkPage] 错误: 无法启动转换任务")
             self.progress_dialog.close()
             QMessageBox.critical(self, "错误", "无法启动转换任务")
-        else:
-            print(f"[WorkPage] 转换任务已成功启动")
+        # else:
+        #     print(f"[WorkPage] 转换任务已成功启动")
     
     def get_selected_files(self) -> list[str]:
         """获取选中的文件列表"""
@@ -267,8 +280,8 @@ class WorkPage(QWidget):
             if self.progress_dialog:
                 self.progress_dialog.set_conversion_error("用户取消")
                 self.progress_dialog.cancelButton.setText("关闭")
-        else:
-            print(f"[WorkPage] 用户取消取消操作")
+        # else:
+        #     print(f"[WorkPage] 用户取消取消操作")
     
     def on_conversion_progress(self, progress_info: ConversionProgress):
         """转换进度更新"""
