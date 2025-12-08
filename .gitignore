@@ -3,3 +3,4 @@ test/
 doc/
 */__pycache__/
 __pycache__/
+ffmpeg/
