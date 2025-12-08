@@ -23,6 +23,12 @@ class ConverterService:
     """视频转音频服务类，将视频转换为MOV容器下的PCM 24bit音频格式"""
     
     @staticmethod
+    def _get_ffmpeg_path():
+        """获取本地ffmpeg路径"""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_dir, 'ffmpeg')
+    
+    @staticmethod
     def convert_to_pcm_mov(input_path: str, output_path: str, 
                           progress_callback: Optional[Callable[[float], None]] = None,
                           stop_event: Optional[threading.Event] = None) -> bool:
@@ -52,8 +58,9 @@ class ConverterService:
             print(f"[转换服务] 确保输出目录存在: {output_dir}")
             
             # 构建ffmpeg命令 - 保留视频流，只转换音频为PCM 24bit
+            ffmpeg_path = os.path.join(ConverterService._get_ffmpeg_path(), 'ffmpeg.exe')
             cmd = [
-                'ffmpeg',
+                ffmpeg_path,
                 '-i', input_path,  # 输入文件
                 '-c:v', 'copy',  # 视频流直接复制，不重新编码
                 '-c:a', 'pcm_s24le',  # 音频转换为PCM 24bit little-endian
@@ -280,9 +287,12 @@ class ConverterService:
     
     @staticmethod
     def check_ffmpeg_available() -> bool:
-        """检查系统中是否安装了ffmpeg"""
+        """检查本地ffmpeg是否可用"""
         try:
-            subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+            ffmpeg_path = os.path.join(ConverterService._get_ffmpeg_path(), 'ffmpeg.exe')
+            if not os.path.exists(ffmpeg_path):
+                return False
+            subprocess.run([ffmpeg_path, '-version'], capture_output=True, check=True)
             return True
         except (FileNotFoundError, subprocess.CalledProcessError):
             return False

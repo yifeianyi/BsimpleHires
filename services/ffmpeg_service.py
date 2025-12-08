@@ -8,6 +8,12 @@ class FFmpegService:
     """使用ffmpeg读取视频/音频文件信息的服务类"""
     
     @staticmethod
+    def _get_ffmpeg_path():
+        """获取本地ffmpeg路径"""
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(base_dir, 'ffmpeg')
+    
+    @staticmethod
     def get_file_info(filepath: str) -> Optional[Dict[str, Any]]:
         """
         使用ffprobe获取文件信息
@@ -23,8 +29,9 @@ class FFmpegService:
             
         try:
             # 使用ffprobe获取文件信息
+            ffprobe_path = os.path.join(FFmpegService._get_ffmpeg_path(), 'ffprobe.exe')
             cmd = [
-                'ffprobe',
+                ffprobe_path,
                 '-v', 'quiet',
                 '-print_format', 'json',
                 '-show_format',
@@ -119,9 +126,12 @@ class FFmpegService:
     
     @staticmethod
     def check_ffmpeg_available() -> bool:
-        """检查系统中是否安装了ffmpeg/ffprobe"""
+        """检查本地ffmpeg/ffprobe是否可用"""
         try:
-            subprocess.run(['ffprobe', '-version'], capture_output=True, check=True)
+            ffprobe_path = os.path.join(FFmpegService._get_ffmpeg_path(), 'ffprobe.exe')
+            if not os.path.exists(ffprobe_path):
+                return False
+            subprocess.run([ffprobe_path, '-version'], capture_output=True, check=True)
             return True
         except (FileNotFoundError, subprocess.CalledProcessError):
             return False

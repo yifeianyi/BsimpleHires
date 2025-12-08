@@ -6,9 +6,15 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>940</width>
-    <height>407</height>
+    <width>1028</width>
+    <height>314</height>
    </rect>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>1100</width>
+    <height>1000</height>
+   </size>
   </property>
   <property name="windowTitle">
    <string>BHires</string>
@@ -16,9 +22,18 @@
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <widget class="QTableWidget" name="tableWidget">
+     <property name="enabled">
+      <bool>true</bool>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>1200</width>
+       <height>1000</height>
+      </size>
+     </property>
      <column>
       <property name="text">
-       <string>全选</string>
+       <string>选择</string>
       </property>
      </column>
      <column>
@@ -75,13 +90,6 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
-     <item>
-      <widget class="QPushButton" name="SettingButton">
-       <property name="text">
-        <string>设置</string>
-       </property>
-      </widget>
-     </item>
      <item>
       <widget class="QPushButton" name="ImportButton">
        <property name="text">

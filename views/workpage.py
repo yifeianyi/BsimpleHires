@@ -51,7 +51,6 @@ class WorkPage(QWidget):
         # UI 按钮
         self.ImportButton.clicked.connect(self.importFiles)
         self.WorkButton.clicked.connect(self.startConversion)
-        self.SettingButton.clicked.connect(self.showSettings)
 
     # ======================================================
     # 文件导入
@@ -320,9 +319,9 @@ class WorkPage(QWidget):
         # 显示错误消息
         QMessageBox.critical(self, "转换错误", error_msg)
     
-    def showSettings(self):
-        """显示设置对话框"""
-        QMessageBox.information(self, "设置", "设置功能暂未实现")
+    # def showSettings(self):
+    #     """显示设置对话框"""
+    #     QMessageBox.information(self, "设置", "设置功能暂未实现")
 
     # ======================================================
     # 通用设置单元格方法
