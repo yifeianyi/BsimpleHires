@@ -1,6 +1,7 @@
 ﻿import os
 import subprocess
 import threading
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -23,7 +24,7 @@ class ConversionProgress:
         self.status = "等待中"
         self.error_message = ""
         self.active_threads = 0
-        self.active_file_progresses: list[tuple[str, float]] = []
+        self.active_file_progresses: list[tuple[str, str, float]] = []
 
     def snapshot(self) -> 'ConversionProgress':
         snapshot = ConversionProgress()
@@ -78,6 +79,26 @@ class ConverterService:
                 logger.info('已删除未完成输出: %s', output_path)
         except OSError as exc:
             logger.warning('删除未完成输出失败: %s - %s', output_path, exc)
+
+    @staticmethod
+    def _build_display_names(input_files: List[str]) -> List[str]:
+        base_counts = Counter(os.path.basename(path) for path in input_files)
+        display_names: List[str] = []
+
+        for path in input_files:
+            base_name = os.path.basename(path)
+            if base_counts[base_name] == 1:
+                display_names.append(base_name)
+                continue
+
+            parent_name = Path(path).parent.name
+            if parent_name:
+                display_names.append(f'{parent_name}\\{base_name}')
+            else:
+                display_names.append(path)
+
+        display_counts = Counter(display_names)
+        return [path if display_counts[name] > 1 else name for path, name in zip(input_files, display_names)]
 
     @staticmethod
     def build_output_path(input_path: str, output_dir: str) -> str:
@@ -251,6 +272,7 @@ class ConverterService:
         completed_lock = threading.Lock()
         per_file_progress = [0.0] * len(input_files)
         active_files: set[int] = set()
+        display_names = ConverterService._build_display_names(input_files)
 
         progress_info.status = '转换中'
         progress_info.active_threads = min(max_workers, len(input_files))
@@ -266,7 +288,7 @@ class ConverterService:
 
         def update_active_file_progresses() -> None:
             progress_info.active_file_progresses = [
-                (os.path.basename(input_files[index]), per_file_progress[index])
+                (input_files[index], display_names[index], per_file_progress[index])
                 for index in sorted(active_files)
             ]
 
@@ -307,14 +329,22 @@ class ConverterService:
                 with completed_lock:
                     per_file_errors[file_index] = message
 
-            success = ConverterService.convert_to_pcm_mov(
-                input_path,
-                output_path,
-                file_progress,
-                file_error,
-                stop_event,
-            )
-            return file_index, success
+            try:
+                success = ConverterService.convert_to_pcm_mov(
+                    input_path,
+                    output_path,
+                    file_progress,
+                    file_error,
+                    stop_event,
+                )
+                return file_index, success
+            finally:
+                with completed_lock:
+                    active_files.discard(file_index)
+                    progress_info.active_threads = len(active_files)
+                    update_total_progress()
+                    update_active_file_progresses()
+                    emit_progress()
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_index = {
@@ -338,10 +368,7 @@ class ConverterService:
                     progress_info.current_file = os.path.basename(input_files[file_index])
                     progress_info.current_progress = 100.0 if success else 0.0
                     per_file_progress[file_index] = 100.0 if success else 0.0
-                    active_files.discard(file_index)
-                    progress_info.active_threads = len(active_files)
                     update_total_progress()
-                    update_active_file_progresses()
 
                     if success:
                         progress_info.status = '转换中'

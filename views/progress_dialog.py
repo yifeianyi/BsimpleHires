@@ -45,7 +45,7 @@ class ProgressDialog(QDialog):
         self.statusLabel.setText("状态: 等待中")
         self._render_active_file_progresses([])
 
-    def _create_file_progress_widget(self, filename: str) -> tuple[QWidget, QLabel, QLabel, QProgressBar]:
+    def _create_file_progress_widget(self, task_id: str) -> tuple[QWidget, QLabel, QLabel, QProgressBar]:
         container = QWidget(self.activeProgressContent)
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
@@ -72,29 +72,31 @@ class ProgressDialog(QDialog):
         container_layout.addLayout(header_layout)
         container_layout.addWidget(progress_bar)
         self.activeProgressLayout.addWidget(container)
+        container.setProperty("task_id", task_id)
         return container, label, percent_label, progress_bar
 
     def _set_label_text(self, label: QLabel, text: str):
-        label.setToolTip(text)
+        label.setProperty("display_text", text)
         metrics = QFontMetrics(label.font())
         available_width = max(label.width(), 220)
         label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideMiddle, available_width))
 
-    def _render_active_file_progresses(self, active_progresses: list[tuple[str, float]]):
-        active_names = {name for name, _ in active_progresses}
-        for filename in list(self.file_progress_widgets.keys()):
-            if filename in active_names:
+    def _render_active_file_progresses(self, active_progresses: list[tuple[str, str, float]]):
+        active_ids = {task_id for task_id, _, _ in active_progresses}
+        for task_id in list(self.file_progress_widgets.keys()):
+            if task_id in active_ids:
                 continue
-            container, _, _, _ = self.file_progress_widgets.pop(filename)
+            container, _, _, _ = self.file_progress_widgets.pop(task_id)
             self.activeProgressLayout.removeWidget(container)
             container.deleteLater()
 
-        for filename, progress in active_progresses:
-            if filename not in self.file_progress_widgets:
-                self.file_progress_widgets[filename] = self._create_file_progress_widget(filename)
+        for task_id, display_name, progress in active_progresses:
+            if task_id not in self.file_progress_widgets:
+                self.file_progress_widgets[task_id] = self._create_file_progress_widget(task_id)
 
-            _, label, percent_label, progress_bar = self.file_progress_widgets[filename]
-            self._set_label_text(label, filename)
+            _, label, percent_label, progress_bar = self.file_progress_widgets[task_id]
+            label.setToolTip(task_id)
+            self._set_label_text(label, display_name)
             percent_label.setText(f"{int(progress)}%")
             progress_bar.setValue(int(progress))
 
@@ -104,8 +106,8 @@ class ProgressDialog(QDialog):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        for filename, (_, label, _, _) in self.file_progress_widgets.items():
-            self._set_label_text(label, filename)
+        for _, label, _, _ in self.file_progress_widgets.values():
+            self._set_label_text(label, label.property("display_text") or label.toolTip())
 
     def update_progress(self, progress_info: ConversionProgress):
         current_file = progress_info.current_file or "准备中..."
