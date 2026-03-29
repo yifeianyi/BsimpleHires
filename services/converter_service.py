@@ -43,6 +43,25 @@ class ConverterService:
     OUTPUT_SUFFIX = '_bsimple'
 
     @staticmethod
+    def _hidden_process_kwargs() -> dict:
+        kwargs = {}
+        if os.name != 'nt':
+            return kwargs
+
+        creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        if creationflags:
+            kwargs['creationflags'] = creationflags
+
+        startupinfo_factory = getattr(subprocess, 'STARTUPINFO', None)
+        use_show_window = getattr(subprocess, 'STARTF_USESHOWWINDOW', 0)
+        if startupinfo_factory and use_show_window:
+            startupinfo = startupinfo_factory()
+            startupinfo.dwFlags |= use_show_window
+            kwargs['startupinfo'] = startupinfo
+
+        return kwargs
+
+    @staticmethod
     def _terminate_process(process: subprocess.Popen) -> None:
         process.terminate()
         try:
@@ -137,6 +156,7 @@ class ConverterService:
                 stderr=subprocess.STDOUT,
                 universal_newlines=True,
                 encoding='utf-8',
+                **ConverterService._hidden_process_kwargs(),
             )
 
             cancel_monitor_done = threading.Event()
@@ -363,7 +383,12 @@ class ConverterService:
             ffmpeg_path = find_ffmpeg_executable()
             if not ffmpeg_path or not os.path.exists(ffmpeg_path):
                 return False
-            subprocess.run([ffmpeg_path, '-version'], capture_output=True, check=True)
+            subprocess.run(
+                [ffmpeg_path, '-version'],
+                capture_output=True,
+                check=True,
+                **ConverterService._hidden_process_kwargs(),
+            )
             return True
         except (TypeError, FileNotFoundError, subprocess.CalledProcessError):
             return False

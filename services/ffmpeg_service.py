@@ -11,6 +11,25 @@ logger = get_logger(__name__)
 
 class FFmpegService:
     @staticmethod
+    def _hidden_process_kwargs() -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {}
+        if os.name != "nt":
+            return kwargs
+
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        if creationflags:
+            kwargs["creationflags"] = creationflags
+
+        startupinfo_factory = getattr(subprocess, "STARTUPINFO", None)
+        use_show_window = getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+        if startupinfo_factory and use_show_window:
+            startupinfo = startupinfo_factory()
+            startupinfo.dwFlags |= use_show_window
+            kwargs["startupinfo"] = startupinfo
+
+        return kwargs
+
+    @staticmethod
     def get_ffprobe_path() -> Optional[str]:
         return find_ffprobe_executable()
 
@@ -53,7 +72,13 @@ class FFmpegService:
         ]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                **FFmpegService._hidden_process_kwargs(),
+            )
             if result.returncode != 0:
                 logger.error("ffprobe 执行失败: %s", result.stderr.strip())
                 return None
@@ -122,8 +147,18 @@ class FFmpegService:
         ffprobe_path = FFmpegService.get_ffprobe_path()
         ffmpeg_path = FFmpegService.get_ffmpeg_path()
         try:
-            subprocess.run([ffprobe_path, "-version"], capture_output=True, check=True)
-            subprocess.run([ffmpeg_path, "-version"], capture_output=True, check=True)
+            subprocess.run(
+                [ffprobe_path, "-version"],
+                capture_output=True,
+                check=True,
+                **FFmpegService._hidden_process_kwargs(),
+            )
+            subprocess.run(
+                [ffmpeg_path, "-version"],
+                capture_output=True,
+                check=True,
+                **FFmpegService._hidden_process_kwargs(),
+            )
             return True
         except (FileNotFoundError, subprocess.CalledProcessError):
             return False
