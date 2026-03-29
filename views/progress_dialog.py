@@ -1,6 +1,7 @@
 from PyQt6 import uic
-from PyQt6.QtWidgets import QDialog, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import QDialog, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget, QHBoxLayout
+from PyQt6.QtCore import pyqtSignal, Qt
+from PyQt6.QtGui import QFontMetrics
 from services.converter_service import ConversionProgress
 from utils.path_utils import get_resource_path
 
@@ -31,6 +32,8 @@ class ProgressDialog(QDialog):
         self.activeProgressArea = QScrollArea(self)
         self.activeProgressArea.setWidgetResizable(True)
         self.activeProgressArea.setMinimumHeight(120)
+        self.activeProgressArea.setMaximumHeight(220)
+        self.activeProgressArea.setFrameShape(QScrollArea.Shape.NoFrame)
 
         self.activeProgressContent = QWidget()
         self.activeProgressLayout = QVBoxLayout(self.activeProgressContent)
@@ -42,6 +45,8 @@ class ProgressDialog(QDialog):
         title_index = self.verticalLayout.indexOf(self.statusLabel)
         self.verticalLayout.insertWidget(title_index, self.activeProgressTitleLabel)
         self.verticalLayout.insertWidget(title_index + 1, self.activeProgressArea)
+        self.activeProgressArea.setVisible(False)
+        self.activeProgressTitleLabel.setVisible(False)
 
     def reset_progress(self):
         """重置进度显示"""
@@ -51,14 +56,42 @@ class ProgressDialog(QDialog):
         self.statusLabel.setText("状态: 等待中")
         self._render_active_file_progresses([])
 
-    def _create_file_progress_widget(self, filename: str) -> tuple[QLabel, QProgressBar]:
-        label = QLabel(filename, self.activeProgressContent)
-        progress_bar = QProgressBar(self.activeProgressContent)
+    def _create_file_progress_widget(self, filename: str) -> tuple[QWidget, QLabel, QLabel, QProgressBar]:
+        container = QWidget(self.activeProgressContent)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(4)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(8)
+
+        label = QLabel(filename, container)
+        label.setSizePolicy(label.sizePolicy().horizontalPolicy(), label.sizePolicy().verticalPolicy())
+        label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+        percent_label = QLabel("0%", container)
+        percent_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        percent_label.setMinimumWidth(42)
+
+        progress_bar = QProgressBar(container)
         progress_bar.setRange(0, 100)
         progress_bar.setValue(0)
-        self.activeProgressLayout.addWidget(label)
-        self.activeProgressLayout.addWidget(progress_bar)
-        return label, progress_bar
+        progress_bar.setTextVisible(False)
+
+        header_layout.addWidget(label, 1)
+        header_layout.addWidget(percent_label)
+        container_layout.addLayout(header_layout)
+        container_layout.addWidget(progress_bar)
+
+        self.activeProgressLayout.addWidget(container)
+        return container, label, percent_label, progress_bar
+
+    def _set_label_text(self, label: QLabel, text: str):
+        label.setToolTip(text)
+        metrics = QFontMetrics(label.font())
+        available_width = max(label.width(), 220)
+        label.setText(metrics.elidedText(text, Qt.TextElideMode.ElideMiddle, available_width))
 
     def _render_active_file_progresses(self, active_progresses: list[tuple[str, float]]):
         active_names = {name for name, _ in active_progresses}
@@ -67,22 +100,26 @@ class ProgressDialog(QDialog):
             if filename in active_names:
                 continue
 
-            label, progress_bar = self.file_progress_widgets.pop(filename)
-            self.activeProgressLayout.removeWidget(label)
-            self.activeProgressLayout.removeWidget(progress_bar)
-            label.deleteLater()
-            progress_bar.deleteLater()
+            container, label, percent_label, progress_bar = self.file_progress_widgets.pop(filename)
+            self.activeProgressLayout.removeWidget(container)
+            container.deleteLater()
 
         for filename, progress in active_progresses:
             if filename not in self.file_progress_widgets:
                 self.file_progress_widgets[filename] = self._create_file_progress_widget(filename)
 
-            label, progress_bar = self.file_progress_widgets[filename]
-            label.setText(filename)
+            _, label, percent_label, progress_bar = self.file_progress_widgets[filename]
+            self._set_label_text(label, filename)
+            percent_label.setText(f"{int(progress)}%")
             progress_bar.setValue(int(progress))
 
         self.activeProgressArea.setVisible(bool(active_progresses))
         self.activeProgressTitleLabel.setVisible(bool(active_progresses))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        for filename, (_, label, _, _) in self.file_progress_widgets.items():
+            self._set_label_text(label, filename)
     
     def update_progress(self, progress_info: ConversionProgress):
         """更新进度信息"""
