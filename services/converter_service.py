@@ -139,14 +139,29 @@ class ConverterService:
                 encoding='utf-8',
             )
 
+            cancel_monitor_done = threading.Event()
+
+            def monitor_cancellation() -> None:
+                if not stop_event:
+                    return
+
+                stop_event.wait()
+                if cancel_monitor_done.is_set():
+                    return
+
+                if process.poll() is None:
+                    logger.info('cancellation requested, terminating ffmpeg process')
+                    ConverterService._terminate_process(process)
+
+            cancel_monitor = threading.Thread(
+                target=monitor_cancellation,
+                name='ffmpeg-cancel-monitor',
+                daemon=True,
+            )
+            cancel_monitor.start()
+
             duration = None
             for line in process.stdout:
-                if stop_event and stop_event.is_set():
-                    logger.info('????????? ffmpeg ??')
-                    ConverterService._terminate_process(process)
-                    ConverterService._remove_incomplete_output(output_path)
-                    return False
-
                 logger.info('[ffmpeg] %s', line.strip())
 
                 if not progress_callback:
@@ -169,13 +184,14 @@ class ConverterService:
                     except Exception as exc:
                         logger.warning('??????: %s', exc)
 
+            return_code = process.wait()
+            cancel_monitor_done.set()
+            cancel_monitor.join(timeout=0.2)
+
             if stop_event and stop_event.is_set():
-                logger.info('???????????')
-                ConverterService._terminate_process(process)
                 ConverterService._remove_incomplete_output(output_path)
                 return False
 
-            return_code = process.wait()
             if return_code == 0:
                 if progress_callback:
                     progress_callback(100.0)
@@ -289,12 +305,13 @@ class ConverterService:
             }
 
             for future in as_completed(future_to_index):
-                if stop_event and stop_event.is_set():
-                    logger.info('???????????????')
-                    executor.shutdown(wait=False, cancel_futures=True)
-                    break
-
-                file_index, success = future.result()
+                try:
+                    file_index, success = future.result()
+                except Exception as exc:
+                    logger.exception('batch conversion task failed')
+                    file_index = future_to_index[future]
+                    success = False
+                    per_file_errors[file_index] = str(exc)
                 with completed_lock:
                     results[file_index] = success
                     completed_count += 1
