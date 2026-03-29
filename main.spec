@@ -1,14 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-import sys
-import glob
-from PyInstaller.utils.hooks import collect_data_files
-
-# ========= ffmpeg外部化 =========
-# 不再打包ffmpeg文件，改为外部依赖
-# ffmpeg_files = [(f, "ffmpeg") for f in glob.glob("ffmpeg/*")]
-
-# ========= 必须的 hidden imports =========
+# FFmpeg ???????????? exe?
 hidden_imports = [
     'PyQt6.QtCore',
     'PyQt6.QtGui',
@@ -25,7 +17,7 @@ hidden_imports = [
     'models',
     'ui.UI_main',
     'ui.UI_workPage',
-    'ui.UI_ProgressBar'
+    'ui.UI_ProgressBar',
 ]
 
 block_cipher = None
@@ -36,8 +28,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('assets/logo.ico', 'assets'),
-        ('ui', 'ui'),  # 添加UI文件
-        # ffmpeg文件外部化，不打包进exe
+        ('ui', 'ui'),
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
@@ -47,13 +38,14 @@ a = Analysis(
         'tkinter',
         'unittest',
         'test',
+        'tests',
         'distutils',
         'setuptools',
         'pip',
         'numpy',
         'scipy',
         'matplotlib',
-        'pandas'
+        'pandas',
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
@@ -74,7 +66,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=False,  # 禁用UPX压缩，加快启动速度
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
@@ -83,5 +75,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='assets/logo.ico'
+    icon='assets/logo.ico',
 )

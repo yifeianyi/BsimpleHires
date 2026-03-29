@@ -6,3 +6,6 @@ __pycache__/
 ffmpeg/
 logs/
 settings.json
+build/
+dist/
+*.pyc
