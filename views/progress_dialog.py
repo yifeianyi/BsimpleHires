@@ -55,7 +55,7 @@ class ProgressDialog(QDialog):
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(8)
 
-        label = QLabel(filename, container)
+        label = QLabel("", container)
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
         percent_label = QLabel("0%", container)
