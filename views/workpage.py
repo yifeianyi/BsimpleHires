@@ -1,4 +1,4 @@
-import os
+﻿import os
 
 from PyQt6 import uic
 from PyQt6.QtCore import Qt
@@ -322,12 +322,7 @@ class WorkPage(QWidget):
         SettingsService.save(self.settings)
         SettingsService.invalidate_cache()
         self.settings = SettingsService.load()
-
-        ffmpeg_error = FFmpegService.get_availability_error()
-        if ffmpeg_error:
-            QMessageBox.warning(self, "FFmpeg 提示", ffmpeg_error)
-        else:
-            QMessageBox.information(self, "设置已保存", "设置已生效。")
+        QMessageBox.information(self, "设置已保存", "设置已生效。")
 
     def _maybe_open_output_dir(self):
         if not self.settings.open_output_dir_after_completion:

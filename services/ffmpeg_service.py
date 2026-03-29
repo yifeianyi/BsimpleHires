@@ -1,4 +1,4 @@
-import json
+﻿import json
 import os
 import subprocess
 from typing import Any, Dict, Optional
@@ -10,8 +10,6 @@ logger = get_logger(__name__)
 
 
 class FFmpegService:
-    """Read media metadata through ffprobe and resolve FFmpeg binaries."""
-
     @staticmethod
     def get_ffprobe_path() -> Optional[str]:
         return find_ffprobe_executable()
@@ -26,11 +24,11 @@ class FFmpegService:
         ffmpeg_path = FFmpegService.get_ffmpeg_path()
 
         if not ffprobe_path and not ffmpeg_path:
-            return "??? ffmpeg ? ffprobe???? FFmpeg ?? ffmpeg ????????????"
+            return "未找到 ffmpeg 和 ffprobe，请检查程序目录或系统环境。"
         if not ffprobe_path:
-            return "??? ffprobe????????????? FFmpeg ???????"
+            return "未找到 ffprobe，无法读取媒体信息。"
         if not ffmpeg_path:
-            return "??? ffmpeg??????????? FFmpeg ???????"
+            return "未找到 ffmpeg，无法执行转换。"
         return None
 
     @staticmethod
@@ -40,82 +38,79 @@ class FFmpegService:
 
         ffprobe_path = FFmpegService.get_ffprobe_path()
         if not ffprobe_path:
-            logger.error("??? ffprobe?????????: %s", filepath)
+            logger.error("未找到 ffprobe，无法读取文件信息: %s", filepath)
             return None
 
         cmd = [
             ffprobe_path,
-            '-v', 'quiet',
-            '-print_format', 'json',
-            '-show_format',
-            '-show_streams',
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            "-show_streams",
             filepath,
         ]
 
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                encoding='utf-8',
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
             if result.returncode != 0:
-                logger.error("ffprobe ????: %s", result.stderr.strip())
+                logger.error("ffprobe 执行失败: %s", result.stderr.strip())
                 return None
 
             data = json.loads(result.stdout)
             return FFmpegService._parse_file_info(data)
         except FileNotFoundError:
-            logger.exception("ffprobe ????????")
+            logger.exception("ffprobe 可执行文件不存在")
             return None
         except json.JSONDecodeError as exc:
-            logger.exception("ffprobe JSON ????: %s", exc)
+            logger.exception("ffprobe JSON 解析失败: %s", exc)
             return None
         except Exception as exc:
-            logger.exception("?????????: %s", exc)
+            logger.exception("获取文件信息时出错: %s", exc)
             return None
 
     @staticmethod
     def _parse_file_info(data: Dict[str, Any]) -> Dict[str, Any]:
         info = {
-            'duration': None,
-            'size': None,
-            'audio_format': None,
-            'video_format': None,
-            'bit_rate': None,
-            'sample_rate': None,
-            'channels': None,
-            'resolution': None,
-            'fps': None,
+            "duration": None,
+            "size": None,
+            "audio_format": None,
+            "video_format": None,
+            "bit_rate": None,
+            "sample_rate": None,
+            "channels": None,
+            "resolution": None,
+            "fps": None,
         }
 
-        format_info = data.get('format', {})
-        info['duration'] = float(format_info.get('duration', 0)) if format_info.get('duration') else None
-        info['size'] = int(format_info.get('size', 0)) if format_info.get('size') else None
+        format_info = data.get("format", {})
+        info["duration"] = float(format_info.get("duration", 0)) if format_info.get("duration") else None
+        info["size"] = int(format_info.get("size", 0)) if format_info.get("size") else None
 
-        for stream in data.get('streams', []):
-            codec_type = stream.get('codec_type')
-            if codec_type == 'audio':
-                info['audio_format'] = stream.get('codec_name')
-                info['sample_rate'] = int(stream.get('sample_rate', 0)) if stream.get('sample_rate') else None
-                info['channels'] = int(stream.get('channels', 0)) if stream.get('channels') else None
-                if stream.get('bit_rate'):
-                    info['bit_rate'] = int(stream['bit_rate'])
-            elif codec_type == 'video':
-                info['video_format'] = stream.get('codec_name')
-                width = stream.get('width')
-                height = stream.get('height')
+        for stream in data.get("streams", []):
+            codec_type = stream.get("codec_type")
+            if codec_type == "audio":
+                info["audio_format"] = stream.get("codec_name")
+                info["sample_rate"] = int(stream.get("sample_rate", 0)) if stream.get("sample_rate") else None
+                info["channels"] = int(stream.get("channels", 0)) if stream.get("channels") else None
+                if stream.get("bit_rate"):
+                    info["bit_rate"] = int(stream["bit_rate"])
+            elif codec_type == "video":
+                info["video_format"] = stream.get("codec_name")
+                width = stream.get("width")
+                height = stream.get("height")
                 if width and height:
-                    info['resolution'] = f"{width}x{height}"
+                    info["resolution"] = f"{width}x{height}"
 
-                frame_rate = stream.get('r_frame_rate', '')
-                if '/' in frame_rate:
+                frame_rate = stream.get("r_frame_rate", "")
+                if "/" in frame_rate:
                     try:
-                        numerator, denominator = frame_rate.split('/')
+                        numerator, denominator = frame_rate.split("/")
                         fps = float(numerator) / float(denominator)
-                        info['fps'] = round(fps, 2) if fps else None
+                        info["fps"] = round(fps, 2) if fps else None
                     except (ValueError, ZeroDivisionError):
-                        info['fps'] = None
+                        info["fps"] = None
 
         return info
 
@@ -127,8 +122,8 @@ class FFmpegService:
         ffprobe_path = FFmpegService.get_ffprobe_path()
         ffmpeg_path = FFmpegService.get_ffmpeg_path()
         try:
-            subprocess.run([ffprobe_path, '-version'], capture_output=True, check=True)
-            subprocess.run([ffmpeg_path, '-version'], capture_output=True, check=True)
+            subprocess.run([ffprobe_path, "-version"], capture_output=True, check=True)
+            subprocess.run([ffmpeg_path, "-version"], capture_output=True, check=True)
             return True
         except (FileNotFoundError, subprocess.CalledProcessError):
             return False

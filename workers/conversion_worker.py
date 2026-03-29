@@ -1,4 +1,4 @@
-import os
+﻿import os
 import threading
 from typing import List, Optional
 
@@ -26,11 +26,11 @@ class ConversionWorker(QObject):
         self.stop_event = threading.Event()
 
     def run(self):
-        logger.info('????????????: files=%s output_dir=%s', len(self.input_files), self.output_dir)
+        logger.info('工作线程开始执行转换任务: files=%s output_dir=%s', len(self.input_files), self.output_dir)
         try:
             self._is_running = True
             if not ConverterService.check_ffmpeg_available():
-                error_msg = FFmpegService.get_availability_error() or '???? ffmpeg????????'
+                error_msg = FFmpegService.get_availability_error() or '未检测到 ffmpeg，无法进行转换。'
                 logger.error(error_msg)
                 self.error.emit(error_msg)
                 return
@@ -54,9 +54,9 @@ class ConversionWorker(QObject):
             elif self._is_running:
                 self.finished.emit(results)
         except Exception as exc:
-            logger.exception('??????')
+            logger.exception('工作线程异常')
             if self._is_running:
-                self.error.emit(f'?????????: {exc}')
+                self.error.emit(f'转换过程中出现错误: {exc}')
 
     def stop(self):
         self.stop_event.set()
@@ -76,9 +76,9 @@ class ConversionThreadManager:
         error_callback=None,
         max_workers: int = 2,
     ) -> bool:
-        logger.info('????????: max_workers=%s output_dir=%s', max_workers, output_dir)
+        logger.info('请求启动转换任务: max_workers=%s output_dir=%s', max_workers, output_dir)
         if self.current_thread and self.current_thread.isRunning():
-            logger.warning('???????????????')
+            logger.warning('已有任务在运行，拒绝启动新任务')
             return False
 
         self.current_thread = QThread()

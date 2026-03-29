@@ -12,7 +12,7 @@ class ProgressDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        uic.loadUi(get_resource_path('ui/ProgressBar.ui'), self)
+        uic.loadUi(get_resource_path("ui/ProgressBar.ui"), self)
         self.file_progress_widgets: dict[str, tuple[QWidget, QLabel, QLabel, QProgressBar]] = {}
         self._init_active_progress_area()
         self.cancelButton.clicked.connect(self.on_cancel_clicked)
@@ -31,7 +31,7 @@ class ProgressDialog(QDialog):
         self.activeProgressLayout.setSpacing(8)
         self.activeProgressArea.setWidget(self.activeProgressContent)
 
-        self.activeProgressTitleLabel = QLabel('???????', self)
+        self.activeProgressTitleLabel = QLabel("正在转换的文件", self)
         title_index = self.verticalLayout.indexOf(self.statusLabel)
         self.verticalLayout.insertWidget(title_index, self.activeProgressTitleLabel)
         self.verticalLayout.insertWidget(title_index + 1, self.activeProgressArea)
@@ -39,10 +39,10 @@ class ProgressDialog(QDialog):
         self.activeProgressTitleLabel.setVisible(False)
 
     def reset_progress(self):
-        self.currentFileLabel.setText('????: ???...')
-        self.totalProgressLabel.setText('????: 0/0')
+        self.currentFileLabel.setText("当前文件: 准备中...")
+        self.totalProgressLabel.setText("总体进度: 0/0")
         self.progressBar.setValue(0)
-        self.statusLabel.setText('??: ???')
+        self.statusLabel.setText("状态: 等待中")
         self._render_active_file_progresses([])
 
     def _create_file_progress_widget(self, filename: str) -> tuple[QWidget, QLabel, QLabel, QProgressBar]:
@@ -58,7 +58,7 @@ class ProgressDialog(QDialog):
         label = QLabel(filename, container)
         label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        percent_label = QLabel('0%', container)
+        percent_label = QLabel("0%", container)
         percent_label.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         percent_label.setMinimumWidth(42)
 
@@ -92,9 +92,10 @@ class ProgressDialog(QDialog):
         for filename, progress in active_progresses:
             if filename not in self.file_progress_widgets:
                 self.file_progress_widgets[filename] = self._create_file_progress_widget(filename)
+
             _, label, percent_label, progress_bar = self.file_progress_widgets[filename]
             self._set_label_text(label, filename)
-            percent_label.setText(f'{int(progress)}%')
+            percent_label.setText(f"{int(progress)}%")
             progress_bar.setValue(int(progress))
 
         visible = bool(active_progresses)
@@ -107,53 +108,53 @@ class ProgressDialog(QDialog):
             self._set_label_text(label, filename)
 
     def update_progress(self, progress_info: ConversionProgress):
-        current_file = progress_info.current_file or '???...'
-        self.currentFileLabel.setText(f'????: {current_file}')
+        current_file = progress_info.current_file or "准备中..."
+        self.currentFileLabel.setText(f"当前文件: {current_file}")
 
-        active_threads_text = f' ({progress_info.active_threads} ??)' if progress_info.active_threads > 0 else ''
+        active_threads_text = f" ({progress_info.active_threads} 线程)" if progress_info.active_threads > 0 else ""
         self.totalProgressLabel.setText(
-            f'????: {progress_info.completed_files}/{progress_info.total_files}{active_threads_text}'
+            f"总体进度: {progress_info.completed_files}/{progress_info.total_files}{active_threads_text}"
         )
         self.progressBar.setValue(int(progress_info.total_progress))
         self._render_active_file_progresses(progress_info.active_file_progresses)
 
-        status_text = f'??: {progress_info.status}'
+        status_text = f"状态: {progress_info.status}"
         if progress_info.error_message:
-            status_text += f' - {progress_info.error_message}'
+            status_text += f" - {progress_info.error_message}"
         self.statusLabel.setText(status_text)
 
     def set_conversion_complete(self, success_count: int, total_count: int):
         self.progressBar.setValue(100)
         self._render_active_file_progresses([])
-        self.statusLabel.setText(f'??: ???? (??: {success_count}/{total_count})')
-        self.cancelButton.setText('??')
+        self.statusLabel.setText(f"状态: 转换完成 (成功: {success_count}/{total_count})")
+        self.cancelButton.setText("关闭")
         self.enable_close()
 
     def set_conversion_error(self, error_msg: str):
         self._render_active_file_progresses([])
-        self.statusLabel.setText(f'??: ???? - {error_msg}')
-        self.cancelButton.setText('??')
+        self.statusLabel.setText(f"状态: 转换失败 - {error_msg}")
+        self.cancelButton.setText("关闭")
         self.enable_close()
 
     def set_cancelling(self):
-        self.statusLabel.setText('??: ????...')
+        self.statusLabel.setText("状态: 正在取消...")
         self.cancelButton.setEnabled(False)
 
     def set_conversion_cancelled(self, success_count: int, total_count: int):
         self._render_active_file_progresses([])
-        self.statusLabel.setText(f'??: ??? (??? {success_count}/{total_count})')
+        self.statusLabel.setText(f"状态: 已取消 (已完成 {success_count}/{total_count})")
         self.cancelButton.setEnabled(True)
-        self.cancelButton.setText('??')
+        self.cancelButton.setText("关闭")
         self.enable_close()
 
     def on_cancel_clicked(self):
-        if self.cancelButton.text() == '??':
+        if self.cancelButton.text() == "取消":
             self.cancel_requested.emit()
         else:
             self.close()
 
     def closeEvent(self, event):
-        if self.cancelButton.text() == '??':
+        if self.cancelButton.text() == "取消":
             self.cancel_requested.emit()
             event.ignore()
         else:
@@ -161,4 +162,4 @@ class ProgressDialog(QDialog):
 
     def enable_close(self):
         self.cancelButton.setEnabled(True)
-        self.cancelButton.setText('??')
+        self.cancelButton.setText("关闭")
