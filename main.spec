@@ -4,13 +4,9 @@ import sys
 import glob
 from PyInstaller.utils.hooks import collect_data_files
 
-# ========= 收集 PyQt6 必须的 DLL =========
-pyqt6_plugins = collect_data_files('PyQt6', includes=['**/plugins/**/*.dll'])
-pyqt6_data = collect_data_files('PyQt6', includes=['**/Qt6/**/*.dll'])
-
-# ========= 收集 ffmpeg 目录 =========
-# 关键：必须收集目录下每个文件，否则 PyInstaller 不会递归复制
-ffmpeg_files = [(f, "ffmpeg") for f in glob.glob("ffmpeg/*")]
+# ========= ffmpeg外部化 =========
+# 不再打包ffmpeg文件，改为外部依赖
+# ffmpeg_files = [(f, "ffmpeg") for f in glob.glob("ffmpeg/*")]
 
 # ========= 必须的 hidden imports =========
 hidden_imports = [
@@ -38,32 +34,30 @@ a = Analysis(
     binaries=[],
     datas=[
         ('assets/logo.ico', 'assets'),
-        ('ui/main.ui', 'ui'),
-        ('ui/workPage.ui', 'ui'),
-        ('ui/ProgressBar.ui', 'ui'),
-        ('test_ffmpeg.py', '.'),  # 添加测试脚本
-        *ffmpeg_files  # 添加ffmpeg文件
+        ('ui', 'ui'),  # 添加UI文件
+        # ffmpeg文件外部化，不打包进exe
     ],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'tkinter',
+        'unittest',
+        'test',
+        'distutils',
+        'setuptools',
+        'pip',
+        'numpy',
+        'scipy',
+        'matplotlib',
+        'pandas'
+    ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
-
-# 添加 PyQt6 的数据文件
-pyqt6_datas = collect_data_files('PyQt6')
-pyqt6_binaries = collect_data_files('PyQt6', includes=['**/*.dll'])
-
-for src, dst in pyqt6_binaries:
-    a.binaries.append((src, dst, 'BINARY'))
-
-for src, dst in pyqt6_datas:
-    a.datas.append((src, dst, 'DATA'))
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -78,7 +72,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # 禁用UPX压缩，加快启动速度
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,

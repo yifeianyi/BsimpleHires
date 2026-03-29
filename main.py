@@ -6,11 +6,16 @@ from views.mainwindow import MainWindow
 
 def get_resource_path(relative_path):
     """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
-    try:
-        # PyInstaller 创建临时文件夹，将路径存储在 _MEIPASS 中
-        base_path = sys._MEIPASS
-    except AttributeError:
-        # 开发环境，使用当前工作目录
+    if getattr(sys, 'frozen', False):
+        # 打包后的环境
+        if hasattr(sys, '_MEIPASS'):
+            # PyInstaller临时目录
+            base_path = sys._MEIPASS
+        else:
+            # 直接运行exe文件
+            base_path = os.path.dirname(sys.executable)
+    else:
+        # 开发环境
         base_path = os.path.abspath(".")
     
     return os.path.join(base_path, relative_path)
