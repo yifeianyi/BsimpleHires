@@ -3,6 +3,7 @@ from typing import List, Optional
 import os
 import threading
 
+from services.ffmpeg_service import FFmpegService
 from services.converter_service import ConverterService, ConversionProgress
 
 
@@ -36,7 +37,7 @@ class ConversionWorker(QObject):
             # 检查ffmpeg是否可用
             print(f"[工作线程] 检查ffmpeg可用性...")
             if not ConverterService.check_ffmpeg_available():
-                error_msg = "未检测到ffmpeg，无法进行转换"
+                error_msg = FFmpegService.get_availability_error() or "未检测到 ffmpeg，无法进行转换。"
                 print(f"[工作线程] 错误: {error_msg}")
                 self.error.emit(error_msg)
                 return

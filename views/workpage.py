@@ -47,7 +47,7 @@ class WorkPage(QWidget):
 
         # 检查ffmpeg是否可用
         if not FFmpegService.check_ffmpeg_available():
-            print("警告: 未检测到ffmpeg/ffprobe，无法读取媒体文件信息")
+            print(f"警告: {FFmpegService.get_availability_error()}")
 
         # UI 按钮
         self.ImportButton.clicked.connect(self.importFiles)
@@ -319,7 +319,8 @@ class WorkPage(QWidget):
             QMessageBox.warning(
                 self,
                 "转换完成",
-                f"转换完成：成功 {success_count} 个，失败 {total_count - success_count} 个"
+                f"转换完成：成功 {success_count} 个，失败 {total_count - success_count} 个。\n\n"
+                f"{self.progress_dialog.statusLabel.text().replace('状态: ', '') if self.progress_dialog else ''}"
             )
     
     def on_conversion_error(self, error_msg: str):

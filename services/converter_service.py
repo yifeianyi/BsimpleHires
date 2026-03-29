@@ -4,7 +4,6 @@ import threading
 from typing import Callable, Optional, List
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import time
 from .ffmpeg_service import FFmpegService
 from utils.path_utils import find_ffmpeg_executable
 
@@ -20,6 +19,7 @@ class ConversionProgress:
         self.status = "等待中"  # 等待中/转换中/已完成/出错
         self.error_message = ""
         self.active_threads = 0  # 当前活跃线程数
+        self.active_file_progresses: list[tuple[str, float]] = []
 
     def snapshot(self) -> "ConversionProgress":
         snapshot = ConversionProgress()
@@ -31,6 +31,7 @@ class ConversionProgress:
         snapshot.status = self.status
         snapshot.error_message = self.error_message
         snapshot.active_threads = self.active_threads
+        snapshot.active_file_progresses = list(self.active_file_progresses)
         return snapshot
 
 
@@ -61,6 +62,7 @@ class ConverterService:
     @staticmethod
     def convert_to_pcm_mov(input_path: str, output_path: str, 
                           progress_callback: Optional[Callable[[float], None]] = None,
+                          error_callback: Optional[Callable[[str], None]] = None,
                           stop_event: Optional[threading.Event] = None) -> bool:
         """
         将视频文件转换为MOV容器，保留视频流，音频转换为PCM 24bit格式
@@ -78,6 +80,11 @@ class ConverterService:
         print(f"[转换服务] 开始转换: {input_path}")
         print(f"[转换服务] 输出路径: {output_path}")
         print(f"[转换服务] 转换模式: 保留视频流，音频转换为PCM 24bit")
+
+        def report_error(message: str) -> None:
+            print(f"[转换服务] 错误: {message}")
+            if error_callback:
+                error_callback(message)
         
         try:
             if stop_event and stop_event.is_set():
@@ -86,12 +93,16 @@ class ConverterService:
 
             ffmpeg_path = find_ffmpeg_executable()
             if not ffmpeg_path:
-                print("[转换服务] 错误: 未找到ffmpeg，无法执行转换")
+                report_error("未找到 ffmpeg，无法执行转换。")
                 return False
 
             # 确保输出目录存在
             output_dir = os.path.dirname(output_path)
-            os.makedirs(output_dir, exist_ok=True)
+            try:
+                os.makedirs(output_dir, exist_ok=True)
+            except OSError as exc:
+                report_error(f"无法创建输出目录: {output_dir} ({exc})")
+                return False
             print(f"[转换服务] 确保输出目录存在: {output_dir}")
             
             # 获取文件信息，检查采样率
@@ -193,12 +204,15 @@ class ConverterService:
                     progress_callback(100.0)
                 return True
             else:
-                print(f"[转换服务] 转换失败，返回码: {return_code}")
+                report_error(f"ffmpeg 转换失败，返回码: {return_code}")
                 ConverterService._remove_incomplete_output(output_path)
                 return False
-                
+        except FileNotFoundError:
+            report_error("未找到 ffmpeg 可执行文件，无法启动转换。")
+            ConverterService._remove_incomplete_output(output_path)
+            return False
         except Exception as e:
-            print(f"[转换服务] 转换出错: {e}")
+            report_error(f"转换出错: {e}")
             import traceback
             print(f"[转换服务] 错误详情: {traceback.format_exc()}")
             ConverterService._remove_incomplete_output(output_path)
@@ -238,6 +252,7 @@ class ConverterService:
         
         # 创建结果列表，保持与输入文件的顺序一致
         results = [False] * len(input_files)
+        per_file_errors = [""] * len(input_files)
         
         # 用于跟踪完成情况
         completed_count = 0
@@ -261,6 +276,12 @@ class ConverterService:
                 return
 
             progress_info.total_progress = sum(per_file_progress) / len(input_files)
+
+        def update_active_file_progresses() -> None:
+            progress_info.active_file_progresses = [
+                (os.path.basename(input_files[index]), per_file_progress[index])
+                for index in sorted(active_files)
+            ]
         
         def process_file(file_index: int, input_path: str) -> tuple[int, bool]:
             """处理单个文件的函数"""
@@ -273,6 +294,8 @@ class ConverterService:
             # 检查输入文件是否存在
             if not os.path.exists(input_path):
                 print(f"[多线程转换] 错误: 输入文件不存在: {input_path}")
+                with completed_lock:
+                    per_file_errors[file_index] = "输入文件不存在。"
                 return file_index, False
 
             with completed_lock:
@@ -281,6 +304,7 @@ class ConverterService:
                 progress_info.current_progress = 0.0
                 progress_info.active_threads = len(active_files)
                 update_total_progress()
+                update_active_file_progresses()
                 emit_progress()
             
             # 生成输出文件名
@@ -296,11 +320,20 @@ class ConverterService:
                     progress_info.current_progress = p
                     progress_info.active_threads = len(active_files)
                     update_total_progress()
+                    update_active_file_progresses()
                     emit_progress()
+
+            def file_error(message: str):
+                with completed_lock:
+                    per_file_errors[file_index] = message
             
             # 执行转换
             success = ConverterService.convert_to_pcm_mov(
-                input_path, output_path, file_progress, stop_event
+                input_path,
+                output_path,
+                file_progress,
+                file_error,
+                stop_event
             )
             
             return file_index, success
@@ -335,13 +368,15 @@ class ConverterService:
                     active_files.discard(file_index)
                     progress_info.active_threads = len(active_files)
                     update_total_progress()
+                    update_active_file_progresses()
                     
                     if success:
                         progress_info.status = "转换中"
                         progress_info.error_message = ""
                     else:
                         progress_info.status = "部分文件转换失败"
-                        progress_info.error_message = f"转换失败: {input_files[file_index]}"
+                        reason = per_file_errors[file_index] or "未知错误"
+                        progress_info.error_message = f"{os.path.basename(input_files[file_index])}: {reason}"
                     
                     emit_progress()
                     
@@ -356,10 +391,15 @@ class ConverterService:
                 progress_info.status = "全部完成"
             else:
                 progress_info.status = "部分完成"
-                progress_info.error_message = f"成功: {success_count}/{len(results)}"
+                failed_messages = [
+                    f"{os.path.basename(input_files[i])}: {per_file_errors[i] or '未知错误'}"
+                    for i, success in enumerate(results) if not success
+                ]
+                progress_info.error_message = "；".join(failed_messages[:2])
         
         progress_info.active_threads = 0
         update_total_progress()
+        update_active_file_progresses()
         if progress_callback:
             progress_callback(progress_info.snapshot())
         

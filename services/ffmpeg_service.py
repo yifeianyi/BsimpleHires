@@ -16,6 +16,20 @@ class FFmpegService:
     @staticmethod
     def get_ffmpeg_path() -> Optional[str]:
         return find_ffmpeg_executable()
+
+    @staticmethod
+    def get_availability_error() -> Optional[str]:
+        ffprobe_path = FFmpegService.get_ffprobe_path()
+        ffmpeg_path = FFmpegService.get_ffmpeg_path()
+
+        if not ffprobe_path and not ffmpeg_path:
+            return "未找到 ffmpeg 和 ffprobe，请安装 ffmpeg 或将 ffmpeg 文件夹放在程序同级目录。"
+        if not ffprobe_path:
+            return "未找到 ffprobe，无法读取媒体信息。请检查 ffmpeg 安装是否完整。"
+        if not ffmpeg_path:
+            return "未找到 ffmpeg，无法执行转换。请检查 ffmpeg 安装是否完整。"
+
+        return None
     
     @staticmethod
     def get_file_info(filepath: str) -> Optional[Dict[str, Any]]:
@@ -135,12 +149,11 @@ class FFmpegService:
     @staticmethod
     def check_ffmpeg_available() -> bool:
         """检查ffmpeg/ffprobe是否可用"""
+        if FFmpegService.get_availability_error():
+            return False
+
         ffprobe_path = FFmpegService.get_ffprobe_path()
         ffmpeg_path = FFmpegService.get_ffmpeg_path()
-
-        if not ffprobe_path or not ffmpeg_path:
-            return False
-        
         try:
             subprocess.run([ffprobe_path, '-version'], capture_output=True, check=True)
             subprocess.run([ffmpeg_path, '-version'], capture_output=True, check=True)
