@@ -1,7 +1,7 @@
 from PyQt6 import uic
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFontMetrics
-from PyQt6.QtWidgets import QDialog, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QApplication, QDialog, QHBoxLayout, QLabel, QProgressBar, QScrollArea, QVBoxLayout, QWidget
 
 from services.converter_service import ConversionProgress
 from utils.path_utils import get_resource_path
@@ -9,6 +9,9 @@ from utils.path_utils import get_resource_path
 
 class ProgressDialog(QDialog):
     cancel_requested = pyqtSignal()
+    ACTIVE_ITEM_HEIGHT = 54
+    ACTIVE_AREA_PADDING = 16
+    BASE_DIALOG_HEIGHT = 240
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -22,7 +25,7 @@ class ProgressDialog(QDialog):
         self.activeProgressArea = QScrollArea(self)
         self.activeProgressArea.setWidgetResizable(True)
         self.activeProgressArea.setMinimumHeight(120)
-        self.activeProgressArea.setMaximumHeight(220)
+        self.activeProgressArea.setMaximumHeight(120)
         self.activeProgressArea.setFrameShape(QScrollArea.Shape.NoFrame)
 
         self.activeProgressContent = QWidget()
@@ -37,6 +40,28 @@ class ProgressDialog(QDialog):
         self.verticalLayout.insertWidget(title_index + 1, self.activeProgressArea)
         self.activeProgressArea.setVisible(False)
         self.activeProgressTitleLabel.setVisible(False)
+
+    def _get_available_screen_height(self) -> int:
+        screen = self.screen() or QApplication.primaryScreen()
+        if not screen:
+            return 900
+        return screen.availableGeometry().height()
+
+    def _update_active_area_layout(self, active_count: int) -> None:
+        if active_count <= 0:
+            self.activeProgressTitleLabel.setText("正在转换的文件")
+            self.activeProgressArea.setMinimumHeight(0)
+            self.activeProgressArea.setMaximumHeight(0)
+            return
+
+        self.activeProgressTitleLabel.setText(f"正在转换的文件 ({active_count})")
+        desired_height = active_count * self.ACTIVE_ITEM_HEIGHT + self.ACTIVE_AREA_PADDING
+        max_height = max(180, self._get_available_screen_height() - self.BASE_DIALOG_HEIGHT)
+        area_height = min(desired_height, max_height)
+        self.activeProgressArea.setMinimumHeight(min(area_height, 120))
+        self.activeProgressArea.setMaximumHeight(area_height)
+        self.resize(max(self.width(), 560), min(self.height() + 1, self._get_available_screen_height() - 80))
+        self.adjustSize()
 
     def reset_progress(self):
         self.currentFileLabel.setText("当前文件: 准备中...")
@@ -101,6 +126,7 @@ class ProgressDialog(QDialog):
             progress_bar.setValue(int(progress))
 
         visible = bool(active_progresses)
+        self._update_active_area_layout(len(active_progresses))
         self.activeProgressArea.setVisible(visible)
         self.activeProgressTitleLabel.setVisible(visible)
 
