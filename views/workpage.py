@@ -1,9 +1,11 @@
 from PyQt6 import uic
 from PyQt6.QtWidgets import (
     QWidget, QFileDialog, QTableWidgetItem,
-    QCheckBox, QHBoxLayout, QWidget, QMessageBox
+    QCheckBox, QHBoxLayout, QWidget, QMessageBox, QPushButton,
+    QAbstractItemView
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QShortcut, QKeySequence
 
 from models import FileInfo, FileManager
 from services.ffmpeg_service import FFmpegService
@@ -52,6 +54,23 @@ class WorkPage(QWidget):
         # UI 按钮
         self.ImportButton.clicked.connect(self.importFiles)
         self.WorkButton.clicked.connect(self.startConversion)
+        self._init_table_behavior()
+        self._init_runtime_buttons()
+
+    def _init_table_behavior(self):
+        self.tableWidget.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.tableWidget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.tableWidget.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.deleteShortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.tableWidget)
+        self.deleteShortcut.activated.connect(self.removeSelectedRows)
+
+    def _init_runtime_buttons(self):
+        self.RemoveButton = QPushButton("移除选中", self)
+        self.ClearButton = QPushButton("清空列表", self)
+        self.horizontalLayout.insertWidget(1, self.RemoveButton)
+        self.horizontalLayout.insertWidget(2, self.ClearButton)
+        self.RemoveButton.clicked.connect(self.removeSelectedRows)
+        self.ClearButton.clicked.connect(self.clearFiles)
 
     # ======================================================
     # 文件导入
@@ -67,7 +86,12 @@ class WorkPage(QWidget):
         if not paths:
             return
 
+        duplicate_count = 0
         for p in paths:
+            if self.fileManager.find_by_path(p):
+                duplicate_count += 1
+                continue
+
             info = self.fileManager.add_file(p)
             # 使用ffmpeg获取文件详细信息
             media_info = FFmpegService.get_file_info(p)
@@ -83,6 +107,13 @@ class WorkPage(QWidget):
                 info.fps = media_info.get('fps')
             
             self.addFileToTable(info)
+
+        if duplicate_count:
+            QMessageBox.information(
+                self,
+                "已跳过重复文件",
+                f"有 {duplicate_count} 个已在列表中的文件被跳过。"
+            )
 
     # ======================================================
     # 渲染表格行
@@ -105,6 +136,9 @@ class WorkPage(QWidget):
 
         # 文件名
         self._set_cell(row, "name", info.filename)
+        name_item = self.tableWidget.item(row, self.COLS["name"]["index"])
+        if name_item:
+            name_item.setToolTip(info.filepath)
 
         # 时长
         text = f"{info.duration:.2f}s" if info.duration else "-"
@@ -184,6 +218,7 @@ class WorkPage(QWidget):
             self,
             "确认转换",
             f"即将转换 {len(selected_files)} 个文件到:\n{output_dir}\n\n"
+            "输出文件名: 原文件名_bsimple.mov（如重名则自动递增）\n"
             "输出格式: MOV容器(保留视频+PCM 24bit音频)\n\n是否继续？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
@@ -234,6 +269,35 @@ class WorkPage(QWidget):
                     if row < len(self.fileManager.files):
                         selected_files.append(self.fileManager.files[row].filepath)
         return selected_files
+
+    def removeSelectedRows(self):
+        """移除表格中选中的行。"""
+        selected_rows = sorted({index.row() for index in self.tableWidget.selectionModel().selectedRows()})
+        if not selected_rows:
+            QMessageBox.information(self, "提示", "请先在列表中选择要移除的文件。")
+            return
+
+        self.fileManager.remove_by_indices(selected_rows)
+        for row in reversed(selected_rows):
+            self.tableWidget.removeRow(row)
+
+    def clearFiles(self):
+        """清空文件列表。"""
+        if self.tableWidget.rowCount() == 0:
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "确认清空",
+            "确定要清空当前文件列表吗？",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        self.fileManager.clear()
+        self.tableWidget.setRowCount(0)
     
     def show_progress_dialog(self, total_files: int):
         """显示进度对话框"""

@@ -37,6 +37,7 @@ class ConversionProgress:
 
 class ConverterService:
     """视频转音频服务类，将视频转换为MOV容器下的PCM 24bit音频格式"""
+    OUTPUT_SUFFIX = "_bsimple"
     
     @staticmethod
     def _terminate_process(process: subprocess.Popen) -> None:
@@ -57,6 +58,20 @@ class ConverterService:
                 print(f"[转换服务] 已删除未完成输出: {output_path}")
         except OSError as exc:
             print(f"[转换服务] 删除未完成输出失败: {output_path} - {exc}")
+
+    @staticmethod
+    def build_output_path(input_path: str, output_dir: str) -> str:
+        """Build a non-destructive output path with collision handling."""
+        input_name = Path(input_path).stem
+        base_name = f"{input_name}{ConverterService.OUTPUT_SUFFIX}"
+        candidate = Path(output_dir) / f"{base_name}.mov"
+        suffix = 2
+
+        while candidate.exists():
+            candidate = Path(output_dir) / f"{base_name}_{suffix}.mov"
+            suffix += 1
+
+        return str(candidate)
 
     
     @staticmethod
@@ -308,8 +323,7 @@ class ConverterService:
                 emit_progress()
             
             # 生成输出文件名
-            input_name = Path(input_path).stem
-            output_path = os.path.join(output_dir, f"{input_name}.mov")
+            output_path = ConverterService.build_output_path(input_path, output_dir)
             print(f"[多线程转换] 输出路径: {output_path}")
             
             # 单文件进度回调（线程安全）

@@ -22,12 +22,32 @@ class FileManager:
         self.files: list[FileInfo] = []
 
     def add_file(self, path: str):
+        normalized_path = os.path.normcase(os.path.abspath(path))
+        existing = self.find_by_path(normalized_path)
+        if existing:
+            return existing
+
         info = FileInfo(
-            filepath=path,
+            filepath=os.path.abspath(path),
             filename=os.path.basename(path)
         )
         self.files.append(info)
         return info
+
+    def find_by_path(self, path: str) -> FileInfo | None:
+        normalized_path = os.path.normcase(os.path.abspath(path))
+        for file_info in self.files:
+            if os.path.normcase(os.path.abspath(file_info.filepath)) == normalized_path:
+                return file_info
+        return None
+
+    def remove_by_indices(self, indices: list[int]) -> None:
+        for index in sorted(set(indices), reverse=True):
+            if 0 <= index < len(self.files):
+                self.files.pop(index)
+
+    def clear(self) -> None:
+        self.files.clear()
 
     def get_all(self):
         return self.files
