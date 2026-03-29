@@ -5,3 +5,4 @@ doc/
 __pycache__/
 ffmpeg/
 logs/
+settings.json

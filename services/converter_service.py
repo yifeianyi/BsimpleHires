@@ -5,6 +5,7 @@ from typing import Callable, Optional, List
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .ffmpeg_service import FFmpegService
+from .settings_service import SettingsService
 from utils.logging_utils import get_logger
 from utils.path_utils import find_ffmpeg_executable
 
@@ -65,9 +66,14 @@ class ConverterService:
     @staticmethod
     def build_output_path(input_path: str, output_dir: str) -> str:
         """Build a non-destructive output path with collision handling."""
+        settings = SettingsService.load()
         input_name = Path(input_path).stem
         base_name = f"{input_name}{ConverterService.OUTPUT_SUFFIX}"
         candidate = Path(output_dir) / f"{base_name}.mov"
+
+        if settings.naming_strategy == "overwrite":
+            return str(candidate)
+
         suffix = 2
 
         while candidate.exists():
