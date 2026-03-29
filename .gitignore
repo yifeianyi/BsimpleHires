@@ -9,3 +9,5 @@ settings.json
 build/
 dist/
 *.pyc
+bug/
+tests/
