@@ -34,7 +34,8 @@ class ProgressDialog(QDialog):
     def update_progress(self, progress_info: ConversionProgress):
         """更新进度信息"""
         # 更新当前文件
-        self.currentFileLabel.setText(f"当前文件: {progress_info.current_file}")
+        current_file = progress_info.current_file or "准备中..."
+        self.currentFileLabel.setText(f"当前文件: {current_file}")
         
         # 更新总体进度
         active_threads_text = f" ({progress_info.active_threads} 线程)" if hasattr(progress_info, 'active_threads') and progress_info.active_threads > 0 else ""
@@ -42,14 +43,8 @@ class ProgressDialog(QDialog):
             f"总体进度: {progress_info.completed_files}/{progress_info.total_files}{active_threads_text}"
         )
         
-        # 计算总体进度百分比
-        if progress_info.total_files > 0:
-            # 已完成文件的进度 + 当前文件的进度
-            file_progress = (progress_info.completed_files / progress_info.total_files) * 100
-            # 当前文件进度应该除以100再乘以单个文件占总进度的比例
-            current_file_progress = (progress_info.current_progress / 100) * (100 / progress_info.total_files)
-            total_progress = file_progress + current_file_progress
-            self.progressBar.setValue(int(total_progress))
+        # 直接使用汇总后的总体进度
+        self.progressBar.setValue(int(progress_info.total_progress))
         
         # 更新状态
         status_text = f"状态: {progress_info.status}"

@@ -16,9 +16,22 @@ class ConversionProgress:
         self.total_files = 0
         self.completed_files = 0
         self.current_progress = 0.0  # 当前文件进度 0-100
+        self.total_progress = 0.0  # 总体进度 0-100
         self.status = "等待中"  # 等待中/转换中/已完成/出错
         self.error_message = ""
         self.active_threads = 0  # 当前活跃线程数
+
+    def snapshot(self) -> "ConversionProgress":
+        snapshot = ConversionProgress()
+        snapshot.current_file = self.current_file
+        snapshot.total_files = self.total_files
+        snapshot.completed_files = self.completed_files
+        snapshot.current_progress = self.current_progress
+        snapshot.total_progress = self.total_progress
+        snapshot.status = self.status
+        snapshot.error_message = self.error_message
+        snapshot.active_threads = self.active_threads
+        return snapshot
 
 
 class ConverterService:
@@ -229,10 +242,25 @@ class ConverterService:
         # 用于跟踪完成情况
         completed_count = 0
         completed_lock = threading.Lock()
+        per_file_progress = [0.0] * len(input_files)
+        active_files = set()
         progress_info.status = "转换中"
         progress_info.active_threads = min(max_workers, len(input_files))
         if progress_callback:
-            progress_callback(progress_info)
+            progress_callback(progress_info.snapshot())
+
+        def emit_progress() -> None:
+            if not progress_callback:
+                return
+
+            progress_callback(progress_info.snapshot())
+
+        def update_total_progress() -> None:
+            if not input_files:
+                progress_info.total_progress = 0.0
+                return
+
+            progress_info.total_progress = sum(per_file_progress) / len(input_files)
         
         def process_file(file_index: int, input_path: str) -> tuple[int, bool]:
             """处理单个文件的函数"""
@@ -246,6 +274,14 @@ class ConverterService:
             if not os.path.exists(input_path):
                 print(f"[多线程转换] 错误: 输入文件不存在: {input_path}")
                 return file_index, False
+
+            with completed_lock:
+                active_files.add(file_index)
+                progress_info.current_file = os.path.basename(input_path)
+                progress_info.current_progress = 0.0
+                progress_info.active_threads = len(active_files)
+                update_total_progress()
+                emit_progress()
             
             # 生成输出文件名
             input_name = Path(input_path).stem
@@ -253,9 +289,14 @@ class ConverterService:
             print(f"[多线程转换] 输出路径: {output_path}")
             
             # 单文件进度回调（线程安全）
-            current_progress = {"value": 0.0}
             def file_progress(p):
-                current_progress["value"] = p
+                with completed_lock:
+                    per_file_progress[file_index] = p
+                    progress_info.current_file = os.path.basename(input_path)
+                    progress_info.current_progress = p
+                    progress_info.active_threads = len(active_files)
+                    update_total_progress()
+                    emit_progress()
             
             # 执行转换
             success = ConverterService.convert_to_pcm_mov(
@@ -290,7 +331,10 @@ class ConverterService:
                     progress_info.completed_files = completed_count
                     progress_info.current_file = os.path.basename(input_files[file_index])
                     progress_info.current_progress = 100.0 if success else 0.0
-                    progress_info.active_threads = sum(1 for f in future_to_index if not f.done())
+                    per_file_progress[file_index] = 100.0 if success else 0.0
+                    active_files.discard(file_index)
+                    progress_info.active_threads = len(active_files)
+                    update_total_progress()
                     
                     if success:
                         progress_info.status = "转换中"
@@ -299,8 +343,7 @@ class ConverterService:
                         progress_info.status = "部分文件转换失败"
                         progress_info.error_message = f"转换失败: {input_files[file_index]}"
                     
-                    if progress_callback:
-                        progress_callback(progress_info)
+                    emit_progress()
                     
                     print(f"[多线程转换] 文件 {file_index+1} 处理完成，成功: {success}")
         
@@ -316,8 +359,9 @@ class ConverterService:
                 progress_info.error_message = f"成功: {success_count}/{len(results)}"
         
         progress_info.active_threads = 0
+        update_total_progress()
         if progress_callback:
-            progress_callback(progress_info)
+            progress_callback(progress_info.snapshot())
         
         print(f"[多线程转换] 批量转换完成，结果: {results}")
         return results
