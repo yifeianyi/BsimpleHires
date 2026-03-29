@@ -1,29 +1,16 @@
 from PyQt6 import uic
 from PyQt6.QtWidgets import (
     QWidget, QFileDialog, QTableWidgetItem,
-    QCheckBox, QHBoxLayout, QWidget, QMessageBox,
-    QProgressBar, QLabel, QVBoxLayout
+    QCheckBox, QHBoxLayout, QWidget, QMessageBox
 )
-from PyQt6.QtCore import Qt, QThread
-import sys
-import os
+from PyQt6.QtCore import Qt
 
 from models import FileInfo, FileManager
 from services.ffmpeg_service import FFmpegService
 from services.converter_service import ConversionProgress
+from utils.path_utils import get_resource_path
 from workers.conversion_worker import ConversionThreadManager
 from views.progress_dialog import ProgressDialog
-
-def get_resource_path(relative_path):
-    """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
-    try:
-        # PyInstaller 创建临时文件夹，将路径存储在 _MEIPASS 中
-        base_path = sys._MEIPASS
-    except AttributeError:
-        # 开发环境，使用当前工作目录
-        base_path = os.path.abspath(".")
-    
-    return os.path.join(base_path, relative_path)
 
 
 class WorkPage(QWidget):
@@ -56,6 +43,7 @@ class WorkPage(QWidget):
         
         # 进度对话框
         self.progress_dialog = None
+        self.cancel_requested = False
 
         # 检查ffmpeg是否可用
         if not FFmpegService.check_ffmpeg_available():
@@ -205,6 +193,7 @@ class WorkPage(QWidget):
             return
         
         print(f"[WorkPage] 用户确认开始转换")
+        self.cancel_requested = False
         
         # 创建并显示进度对话框
         print(f"[WorkPage] 创建进度对话框")
@@ -273,13 +262,13 @@ class WorkPage(QWidget):
         
         if reply == QMessageBox.StandardButton.Yes:
             print(f"[WorkPage] 用户确认取消转换")
+            self.cancel_requested = True
             # 停止转换
             self.conversion_manager.stop_conversion()
             
             # 更新进度对话框状态
             if self.progress_dialog:
-                self.progress_dialog.set_conversion_error("用户取消")
-                self.progress_dialog.cancelButton.setText("关闭")
+                self.progress_dialog.set_cancelling()
         # else:
         #     print(f"[WorkPage] 用户取消取消操作")
     
@@ -303,9 +292,21 @@ class WorkPage(QWidget):
         
         # 更新进度对话框
         if self.progress_dialog:
-            self.progress_dialog.set_conversion_complete(success_count, total_count)
+            if self.cancel_requested:
+                self.progress_dialog.set_conversion_cancelled(success_count, total_count)
+            else:
+                self.progress_dialog.set_conversion_complete(success_count, total_count)
         
         # 显示结果消息
+        if self.cancel_requested:
+            QMessageBox.information(
+                self,
+                "已取消",
+                f"转换已取消：已完成 {success_count} 个，未完成 {total_count - success_count} 个"
+            )
+            self.cancel_requested = False
+            return
+
         if success_count == total_count:
             print(f"[WorkPage] 所有文件转换成功")
             QMessageBox.information(

@@ -1,20 +1,8 @@
 from PyQt6 import uic
 from PyQt6.QtWidgets import QDialog
-from PyQt6.QtCore import Qt, pyqtSignal
-import sys
-import os
+from PyQt6.QtCore import pyqtSignal
 from services.converter_service import ConversionProgress
-
-def get_resource_path(relative_path):
-    """获取资源文件的绝对路径，支持开发环境和打包后的环境"""
-    try:
-        # PyInstaller 创建临时文件夹，将路径存储在 _MEIPASS 中
-        base_path = sys._MEIPASS
-    except AttributeError:
-        # 开发环境，使用当前工作目录
-        base_path = os.path.abspath(".")
-    
-    return os.path.join(base_path, relative_path)
+from utils.path_utils import get_resource_path
 
 
 class ProgressDialog(QDialog):
@@ -81,6 +69,18 @@ class ProgressDialog(QDialog):
         self.statusLabel.setText(f"状态: 转换失败 - {error_msg}")
         self.cancelButton.setText("关闭")
         self.enable_close()
+
+    def set_cancelling(self):
+        """设置正在取消状态。"""
+        self.statusLabel.setText("状态: 正在取消...")
+        self.cancelButton.setEnabled(False)
+
+    def set_conversion_cancelled(self, success_count: int, total_count: int):
+        """设置转换已取消状态。"""
+        self.statusLabel.setText(f"状态: 已取消 (已完成: {success_count}/{total_count})")
+        self.cancelButton.setEnabled(True)
+        self.cancelButton.setText("关闭")
+        self.enable_close()
     
     def on_cancel_clicked(self):
         """取消按钮点击处理"""
@@ -102,5 +102,6 @@ class ProgressDialog(QDialog):
     
     def enable_close(self):
         """启用窗口关闭"""
+        self.cancelButton.setEnabled(True)
         self.cancelButton.setText("关闭")
         # 窗口已经是非模态的，无需修改

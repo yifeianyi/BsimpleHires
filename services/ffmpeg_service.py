@@ -1,47 +1,21 @@
 import subprocess
 import json
 import os
-import sys
 from typing import Optional, Dict, Any
+
+from utils.path_utils import find_ffmpeg_executable, find_ffprobe_executable
 
 
 class FFmpegService:
     """使用ffmpeg读取视频/音频文件信息的服务类"""
     
     @staticmethod
-    def _get_ffmpeg_path():
-        """获取ffmpeg路径，优先使用系统PATH，其次使用本地目录"""
-        # 首先尝试系统PATH中的ffmpeg
-        try:
-            result = subprocess.run(['where', 'ffprobe'], capture_output=True, text=True)
-            if result.returncode == 0:
-                # 找到系统PATH中的ffprobe，返回其目录
-                ffprobe_path = result.stdout.strip()
-                return os.path.dirname(ffprobe_path)
-        except:
-            pass
-        
-        # 系统PATH中没有，尝试本地目录
-        if getattr(sys, 'frozen', False):
-            # 打包后的环境
-            if hasattr(sys, '_MEIPASS'):
-                # PyInstaller临时目录（开发时）
-                base_dir = sys._MEIPASS
-            else:
-                # 直接运行exe文件，检查exe同级目录
-                base_dir = os.path.dirname(sys.executable)
-        else:
-            # 开发环境
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        
-        local_ffmpeg_dir = os.path.join(base_dir, 'ffmpeg')
-        
-        # 检查本地ffmpeg目录是否存在
-        if os.path.exists(os.path.join(local_ffmpeg_dir, 'ffprobe.exe')):
-            return local_ffmpeg_dir
-        
-        # 都没有找到，返回None
-        return None
+    def get_ffprobe_path() -> Optional[str]:
+        return find_ffprobe_executable()
+
+    @staticmethod
+    def get_ffmpeg_path() -> Optional[str]:
+        return find_ffmpeg_executable()
     
     @staticmethod
     def get_file_info(filepath: str) -> Optional[Dict[str, Any]]:
@@ -57,15 +31,13 @@ class FFmpegService:
         if not os.path.exists(filepath):
             return None
         
-        # 获取ffmpeg路径
-        ffmpeg_path = FFmpegService._get_ffmpeg_path()
-        if not ffmpeg_path:
+        ffprobe_path = FFmpegService.get_ffprobe_path()
+        if not ffprobe_path:
             print("错误: 未找到ffprobe，请安装ffmpeg或将ffmpeg文件夹放在程序同级目录")
             return None
             
         try:
             # 使用ffprobe获取文件信息
-            ffprobe_path = os.path.join(ffmpeg_path, 'ffprobe.exe')
             cmd = [
                 ffprobe_path,
                 '-v', 'quiet',
@@ -163,15 +135,15 @@ class FFmpegService:
     @staticmethod
     def check_ffmpeg_available() -> bool:
         """检查ffmpeg/ffprobe是否可用"""
-        ffmpeg_path = FFmpegService._get_ffmpeg_path()
-        if not ffmpeg_path:
+        ffprobe_path = FFmpegService.get_ffprobe_path()
+        ffmpeg_path = FFmpegService.get_ffmpeg_path()
+
+        if not ffprobe_path or not ffmpeg_path:
             return False
         
         try:
-            ffprobe_path = os.path.join(ffmpeg_path, 'ffprobe.exe')
-            if not os.path.exists(ffprobe_path):
-                return False
             subprocess.run([ffprobe_path, '-version'], capture_output=True, check=True)
+            subprocess.run([ffmpeg_path, '-version'], capture_output=True, check=True)
             return True
         except (FileNotFoundError, subprocess.CalledProcessError):
             return False

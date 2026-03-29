@@ -12,6 +12,7 @@ class ConversionWorker(QObject):
     # 信号定义
     progress_updated = pyqtSignal(ConversionProgress)  # 进度更新
     finished = pyqtSignal(list)  # 转换完成，传递结果列表
+    cancelled = pyqtSignal(list)  # 转换取消，传递当前结果列表
     error = pyqtSignal(str)  # 错误信号
     
     def __init__(self, input_files: List[str], output_dir: str, max_workers: int = 2):
@@ -20,6 +21,7 @@ class ConversionWorker(QObject):
         self.output_dir = output_dir
         self.max_workers = max_workers
         self._is_running = False
+        self.stop_event = threading.Event()
     
     def run(self):
         """执行转换任务"""
@@ -58,13 +60,16 @@ class ConversionWorker(QObject):
                 self.input_files, 
                 self.output_dir,
                 progress_callback,
-                stop_event=threading.Event(),  # 创建停止事件
+                stop_event=self.stop_event,
                 max_workers=self.max_workers
             )
             
             print(f"[工作线程] 批量转换完成，结果: {results}")
             
-            if self._is_running:
+            if self.stop_event.is_set():
+                print(f"[工作线程] 发送取消信号")
+                self.cancelled.emit(results)
+            elif self._is_running:
                 print(f"[工作线程] 发送完成信号")
                 self.finished.emit(results)
             else:
@@ -81,7 +86,7 @@ class ConversionWorker(QObject):
     
     def stop(self):
         """停止转换任务"""
-        self._is_running = False
+        self.stop_event.set()
 
 
 class ConversionThreadManager:
@@ -127,6 +132,7 @@ class ConversionThreadManager:
         print(f"[线程管理器] 连接信号和槽")
         self.current_thread.started.connect(self.current_worker.run)
         self.current_worker.finished.connect(self._on_finished)
+        self.current_worker.cancelled.connect(self._on_finished)
         self.current_worker.error.connect(self._on_error)
         self.current_worker.progress_updated.connect(self._on_progress)
         
@@ -136,6 +142,7 @@ class ConversionThreadManager:
             print(f"[线程管理器] 已连接进度回调")
         if finished_callback:
             self.current_worker.finished.connect(finished_callback)
+            self.current_worker.cancelled.connect(finished_callback)
             print(f"[线程管理器] 已连接完成回调")
         if error_callback:
             self.current_worker.error.connect(error_callback)
@@ -151,9 +158,6 @@ class ConversionThreadManager:
         """停止当前转换任务"""
         if self.current_worker:
             self.current_worker.stop()
-        if self.current_thread:
-            self.current_thread.quit()
-            self.current_thread.wait()
     
     def is_running(self) -> bool:
         """检查是否有任务在运行"""

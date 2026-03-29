@@ -1,12 +1,12 @@
 import subprocess
 import os
-import sys
 import threading
 from typing import Callable, Optional, List
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from .ffmpeg_service import FFmpegService
+from utils.path_utils import find_ffmpeg_executable
 
 
 class ConversionProgress:
@@ -25,20 +25,24 @@ class ConverterService:
     """视频转音频服务类，将视频转换为MOV容器下的PCM 24bit音频格式"""
     
     @staticmethod
-    def _get_ffmpeg_path():
-        """返回 ffmpeg 目录的路径"""
-        if getattr(sys, 'frozen', False):
-            # 打包后的环境
-            if hasattr(sys, '_MEIPASS'):
-                # PyInstaller临时目录
-                base_dir = sys._MEIPASS
-            else:
-                # 直接运行exe文件
-                base_dir = os.path.dirname(sys.executable)
-        else:
-            # 开发环境
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(base_dir, 'ffmpeg')
+    def _terminate_process(process: subprocess.Popen) -> None:
+        process.terminate()
+
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+
+    @staticmethod
+    def _remove_incomplete_output(output_path: str) -> None:
+        """Best-effort cleanup for cancelled/failed outputs."""
+        try:
+            if os.path.exists(output_path):
+                os.remove(output_path)
+                print(f"[转换服务] 已删除未完成输出: {output_path}")
+        except OSError as exc:
+            print(f"[转换服务] 删除未完成输出失败: {output_path} - {exc}")
 
     
     @staticmethod
@@ -66,6 +70,12 @@ class ConverterService:
             if stop_event and stop_event.is_set():
                 print("[转换服务] 检测到取消请求，跳过本次转换")
                 return False
+
+            ffmpeg_path = find_ffmpeg_executable()
+            if not ffmpeg_path:
+                print("[转换服务] 错误: 未找到ffmpeg，无法执行转换")
+                return False
+
             # 确保输出目录存在
             output_dir = os.path.dirname(output_path)
             os.makedirs(output_dir, exist_ok=True)
@@ -77,7 +87,6 @@ class ConverterService:
             print(f"[转换服务] 检测到采样率: {sample_rate} Hz")
             
             # 构建ffmpeg命令 - 保留视频流，只转换音频为PCM 24bit
-            ffmpeg_path = os.path.join(ConverterService._get_ffmpeg_path(), 'ffmpeg.exe')
             cmd = [
                 ffmpeg_path,
                 '-i', input_path,  # 输入文件
@@ -121,12 +130,8 @@ class ConverterService:
             for line in process.stdout:
                 if stop_event and stop_event.is_set():
                     print("[转换服务] 收到取消请求，尝试终止ffmpeg进程")
-                    process.terminate()
-                    try:
-                        process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
+                    ConverterService._terminate_process(process)
+                    ConverterService._remove_incomplete_output(output_path)
                     return False
                 print(f"[ffmpeg输出] {line.strip()}")
                 
@@ -157,12 +162,8 @@ class ConverterService:
             print("[转换服务] 等待进程完成...")
             if stop_event and stop_event.is_set():
                 print("[转换服务] 收到取消请求，终止等待")
-                process.terminate()
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
+                ConverterService._terminate_process(process)
+                ConverterService._remove_incomplete_output(output_path)
                 return False
             return_code = process.wait()
             print(f"[转换服务] 进程返回码: {return_code}")
@@ -180,12 +181,14 @@ class ConverterService:
                 return True
             else:
                 print(f"[转换服务] 转换失败，返回码: {return_code}")
+                ConverterService._remove_incomplete_output(output_path)
                 return False
                 
         except Exception as e:
             print(f"[转换服务] 转换出错: {e}")
             import traceback
             print(f"[转换服务] 错误详情: {traceback.format_exc()}")
+            ConverterService._remove_incomplete_output(output_path)
             return False
     
     @staticmethod
@@ -226,6 +229,10 @@ class ConverterService:
         # 用于跟踪完成情况
         completed_count = 0
         completed_lock = threading.Lock()
+        progress_info.status = "转换中"
+        progress_info.active_threads = min(max_workers, len(input_files))
+        if progress_callback:
+            progress_callback(progress_info)
         
         def process_file(file_index: int, input_path: str) -> tuple[int, bool]:
             """处理单个文件的函数"""
@@ -265,13 +272,11 @@ class ConverterService:
                 for i, file_path in enumerate(input_files)
             }
             
-            progress_info.status = "转换中"
-            progress_info.active_threads = min(max_workers, len(input_files))
-            
             # 处理完成的任务
             for future in as_completed(future_to_index):
                 if stop_event and stop_event.is_set():
                     print("[多线程转换] 检测到取消请求，停止处理新任务")
+                    executor.shutdown(wait=False, cancel_futures=True)
                     break
                 
                 file_index, success = future.result()
@@ -321,10 +326,10 @@ class ConverterService:
     def check_ffmpeg_available() -> bool:
         """检查本地ffmpeg是否可用"""
         try:
-            ffmpeg_path = os.path.join(ConverterService._get_ffmpeg_path(), 'ffmpeg.exe')
+            ffmpeg_path = find_ffmpeg_executable()
             if not os.path.exists(ffmpeg_path):
                 return False
             subprocess.run([ffmpeg_path, '-version'], capture_output=True, check=True)
             return True
-        except (FileNotFoundError, subprocess.CalledProcessError):
+        except (TypeError, FileNotFoundError, subprocess.CalledProcessError):
             return False
