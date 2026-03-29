@@ -1,7 +1,7 @@
-import subprocess
 import json
 import os
-from typing import Optional, Dict, Any
+import subprocess
+from typing import Any, Dict, Optional
 
 from utils.logging_utils import get_logger
 from utils.path_utils import find_ffmpeg_executable, find_ffprobe_executable
@@ -10,8 +10,8 @@ logger = get_logger(__name__)
 
 
 class FFmpegService:
-    """使用ffmpeg读取视频/音频文件信息的服务类"""
-    
+    """Read media metadata through ffprobe and resolve FFmpeg binaries."""
+
     @staticmethod
     def get_ffprobe_path() -> Optional[str]:
         return find_ffprobe_executable()
@@ -26,132 +26,101 @@ class FFmpegService:
         ffmpeg_path = FFmpegService.get_ffmpeg_path()
 
         if not ffprobe_path and not ffmpeg_path:
-            return "未找到 ffmpeg 和 ffprobe，请安装 ffmpeg 或将 ffmpeg 文件夹放在程序同级目录。"
+            return "??? ffmpeg ? ffprobe???? FFmpeg ?? ffmpeg ????????????"
         if not ffprobe_path:
-            return "未找到 ffprobe，无法读取媒体信息。请检查 ffmpeg 安装是否完整。"
+            return "??? ffprobe????????????? FFmpeg ???????"
         if not ffmpeg_path:
-            return "未找到 ffmpeg，无法执行转换。请检查 ffmpeg 安装是否完整。"
-
+            return "??? ffmpeg??????????? FFmpeg ???????"
         return None
-    
+
     @staticmethod
     def get_file_info(filepath: str) -> Optional[Dict[str, Any]]:
-        """
-        使用ffprobe获取文件信息
-        
-        Args:
-            filepath: 文件路径
-            
-        Returns:
-            包含文件信息的字典，如果出错返回None
-        """
         if not os.path.exists(filepath):
             return None
-        
+
         ffprobe_path = FFmpegService.get_ffprobe_path()
         if not ffprobe_path:
-            logger.error("未找到 ffprobe，无法读取文件信息: %s", filepath)
+            logger.error("??? ffprobe?????????: %s", filepath)
             return None
-            
+
+        cmd = [
+            ffprobe_path,
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            '-show_streams',
+            filepath,
+        ]
+
         try:
-            # 使用ffprobe获取文件信息
-            cmd = [
-                ffprobe_path,
-                '-v', 'quiet',
-                '-print_format', 'json',
-                '-show_format',
-                '-show_streams',
-                filepath
-            ]
-            
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                encoding='utf-8'
+                encoding='utf-8',
             )
-            
             if result.returncode != 0:
-                logger.error("ffprobe 执行失败: %s", result.stderr.strip())
+                logger.error("ffprobe ????: %s", result.stderr.strip())
                 return None
-                
+
             data = json.loads(result.stdout)
             return FFmpegService._parse_file_info(data)
-            
         except FileNotFoundError:
-            logger.exception("ffprobe 可执行文件不存在")
+            logger.exception("ffprobe ????????")
             return None
-        except json.JSONDecodeError as e:
-            logger.exception("ffprobe JSON 解析失败: %s", e)
+        except json.JSONDecodeError as exc:
+            logger.exception("ffprobe JSON ????: %s", exc)
             return None
-        except Exception as e:
-            logger.exception("获取文件信息时出错: %s", e)
+        except Exception as exc:
+            logger.exception("?????????: %s", exc)
             return None
-    
+
     @staticmethod
     def _parse_file_info(data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        解析ffprobe返回的JSON数据
-        
-        Args:
-            data: ffprobe返回的JSON数据
-            
-        Returns:
-            解析后的文件信息字典
-        """
         info = {
             'duration': None,
             'size': None,
             'audio_format': None,
             'video_format': None,
-            'bit_rate': None,  # 音频码率
+            'bit_rate': None,
             'sample_rate': None,
             'channels': None,
             'resolution': None,
-            'fps': None
+            'fps': None,
         }
-        
-        # 从format中获取基本信息
+
         format_info = data.get('format', {})
         info['duration'] = float(format_info.get('duration', 0)) if format_info.get('duration') else None
         info['size'] = int(format_info.get('size', 0)) if format_info.get('size') else None
-        
-        # 从streams中获取详细信息
-        streams = data.get('streams', [])
-        for stream in streams:
+
+        for stream in data.get('streams', []):
             codec_type = stream.get('codec_type')
-            
             if codec_type == 'audio':
                 info['audio_format'] = stream.get('codec_name')
                 info['sample_rate'] = int(stream.get('sample_rate', 0)) if stream.get('sample_rate') else None
                 info['channels'] = int(stream.get('channels', 0)) if stream.get('channels') else None
-                # 获取音频码率
-                audio_bit_rate = stream.get('bit_rate')
-                if audio_bit_rate:
-                    info['bit_rate'] = int(audio_bit_rate)
-                
+                if stream.get('bit_rate'):
+                    info['bit_rate'] = int(stream['bit_rate'])
             elif codec_type == 'video':
                 info['video_format'] = stream.get('codec_name')
                 width = stream.get('width')
                 height = stream.get('height')
                 if width and height:
                     info['resolution'] = f"{width}x{height}"
-                
-                # 获取帧率
-                r_frame_rate = stream.get('r_frame_rate', '')
-                if '/' in r_frame_rate:
+
+                frame_rate = stream.get('r_frame_rate', '')
+                if '/' in frame_rate:
                     try:
-                        num, den = r_frame_rate.split('/')
-                        fps = float(num) / float(den) if float(den) != 0 else None
+                        numerator, denominator = frame_rate.split('/')
+                        fps = float(numerator) / float(denominator)
                         info['fps'] = round(fps, 2) if fps else None
                     except (ValueError, ZeroDivisionError):
                         info['fps'] = None
-        
+
         return info
-    
+
     @staticmethod
     def check_ffmpeg_available() -> bool:
-        """检查ffmpeg/ffprobe是否可用"""
         if FFmpegService.get_availability_error():
             return False
 
