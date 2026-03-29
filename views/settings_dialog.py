@@ -14,7 +14,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from services.settings_service import AppSettings
+from services.settings_service import AppSettings, get_default_worker_count, get_max_worker_limit
 
 
 class SettingsDialog(QDialog):
@@ -36,8 +36,9 @@ class SettingsDialog(QDialog):
         )
 
         self.max_workers_spin = QSpinBox(self)
-        self.max_workers_spin.setRange(1, 4)
-        self.max_workers_spin.setValue(settings.max_workers)
+        self.max_workers_spin.setRange(1, get_max_worker_limit())
+        self.max_workers_spin.setValue(settings.max_workers or get_default_worker_count())
+        self.max_workers_spin.setToolTip(f"最大值为当前机器 CPU 核心数: {get_max_worker_limit()}")
         form_layout.addRow("最大并发数", self.max_workers_spin)
 
         self.naming_strategy_combo = QComboBox(self)
