@@ -1,10 +1,7 @@
-import os
 import shutil
 import sys
 from pathlib import Path
 from typing import Optional
-
-from services.settings_service import SettingsService
 
 
 def get_app_base_dir() -> Path:
@@ -52,35 +49,11 @@ def _find_in_local_ffmpeg(binary_name: str) -> Optional[str]:
     return None
 
 
-def _find_in_custom_ffmpeg_dir(binary_name: str) -> Optional[str]:
-    custom_dir = SettingsService.load().custom_ffmpeg_dir.strip()
-    if not custom_dir:
-        return None
-
-    candidate = Path(custom_dir) / binary_name
-    if candidate.exists():
-        return str(candidate.resolve())
-
-    return None
-
-
 def find_ffmpeg_executable() -> Optional[str]:
     """Find ffmpeg.exe or ffmpeg in PATH/local ffmpeg directory."""
-    return (
-        _find_in_custom_ffmpeg_dir("ffmpeg.exe")
-        or _find_in_custom_ffmpeg_dir("ffmpeg")
-        or _resolve_binary("ffmpeg.exe")
-        or _resolve_binary("ffmpeg")
-        or _find_in_local_ffmpeg("ffmpeg.exe")
-    )
+    return _resolve_binary("ffmpeg.exe") or _resolve_binary("ffmpeg") or _find_in_local_ffmpeg("ffmpeg.exe")
 
 
 def find_ffprobe_executable() -> Optional[str]:
     """Find ffprobe.exe or ffprobe in PATH/local ffmpeg directory."""
-    return (
-        _find_in_custom_ffmpeg_dir("ffprobe.exe")
-        or _find_in_custom_ffmpeg_dir("ffprobe")
-        or _resolve_binary("ffprobe.exe")
-        or _resolve_binary("ffprobe")
-        or _find_in_local_ffmpeg("ffprobe.exe")
-    )
+    return _resolve_binary("ffprobe.exe") or _resolve_binary("ffprobe") or _find_in_local_ffmpeg("ffprobe.exe")

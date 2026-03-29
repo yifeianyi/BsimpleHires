@@ -8,7 +8,6 @@ class AppSettings:
     default_output_dir: str = ""
     max_workers: int = 2
     naming_strategy: str = "auto_increment"
-    custom_ffmpeg_dir: str = ""
     open_output_dir_after_completion: bool = False
 
 

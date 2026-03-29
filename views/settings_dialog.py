@@ -21,7 +21,7 @@ class SettingsDialog(QDialog):
     def __init__(self, settings: AppSettings, parent=None):
         super().__init__(parent)
         self.setWindowTitle("设置")
-        self.resize(520, 260)
+        self.resize(520, 220)
 
         layout = QVBoxLayout(self)
         form_layout = QFormLayout()
@@ -45,13 +45,6 @@ class SettingsDialog(QDialog):
         self.naming_strategy_combo.addItem("直接覆盖同名输出", "overwrite")
         self._set_combo_value(self.naming_strategy_combo, settings.naming_strategy)
         form_layout.addRow("输出命名策略", self.naming_strategy_combo)
-
-        self.custom_ffmpeg_edit = QLineEdit(settings.custom_ffmpeg_dir, self)
-        self.custom_ffmpeg_edit.setPlaceholderText("可选，填写 ffmpeg 所在目录")
-        form_layout.addRow(
-            "自定义 FFmpeg 目录",
-            self._build_path_row(self.custom_ffmpeg_edit, self._choose_ffmpeg_dir),
-        )
 
         self.open_output_checkbox = QCheckBox("转换完成后自动打开输出目录", self)
         self.open_output_checkbox.setChecked(settings.open_output_dir_after_completion)
@@ -88,16 +81,6 @@ class SettingsDialog(QDialog):
         if path:
             self.default_output_edit.setText(path)
 
-    def _choose_ffmpeg_dir(self) -> None:
-        path = QFileDialog.getExistingDirectory(
-            self,
-            "选择 FFmpeg 目录",
-            self.custom_ffmpeg_edit.text().strip(),
-            QFileDialog.Option.ShowDirsOnly,
-        )
-        if path:
-            self.custom_ffmpeg_edit.setText(path)
-
     @staticmethod
     def _set_combo_value(combo: QComboBox, value: str) -> None:
         for index in range(combo.count()):
@@ -110,6 +93,5 @@ class SettingsDialog(QDialog):
             default_output_dir=self.default_output_edit.text().strip(),
             max_workers=self.max_workers_spin.value(),
             naming_strategy=self.naming_strategy_combo.currentData(),
-            custom_ffmpeg_dir=self.custom_ffmpeg_edit.text().strip(),
             open_output_dir_after_completion=self.open_output_checkbox.isChecked(),
         )
