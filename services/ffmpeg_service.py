@@ -3,7 +3,10 @@ import json
 import os
 from typing import Optional, Dict, Any
 
+from utils.logging_utils import get_logger
 from utils.path_utils import find_ffmpeg_executable, find_ffprobe_executable
+
+logger = get_logger(__name__)
 
 
 class FFmpegService:
@@ -47,7 +50,7 @@ class FFmpegService:
         
         ffprobe_path = FFmpegService.get_ffprobe_path()
         if not ffprobe_path:
-            print("错误: 未找到ffprobe，请安装ffmpeg或将ffmpeg文件夹放在程序同级目录")
+            logger.error("未找到 ffprobe，无法读取文件信息: %s", filepath)
             return None
             
         try:
@@ -69,20 +72,20 @@ class FFmpegService:
             )
             
             if result.returncode != 0:
-                print(f"ffprobe错误: {result.stderr}")
+                logger.error("ffprobe 执行失败: %s", result.stderr.strip())
                 return None
                 
             data = json.loads(result.stdout)
             return FFmpegService._parse_file_info(data)
             
         except FileNotFoundError:
-            print("错误: 未找到ffprobe，请确保已安装ffmpeg")
+            logger.exception("ffprobe 可执行文件不存在")
             return None
         except json.JSONDecodeError as e:
-            print(f"JSON解析错误: {e}")
+            logger.exception("ffprobe JSON 解析失败: %s", e)
             return None
         except Exception as e:
-            print(f"获取文件信息时出错: {e}")
+            logger.exception("获取文件信息时出错: %s", e)
             return None
     
     @staticmethod

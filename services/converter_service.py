@@ -5,7 +5,10 @@ from typing import Callable, Optional, List
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from .ffmpeg_service import FFmpegService
+from utils.logging_utils import get_logger
 from utils.path_utils import find_ffmpeg_executable
+
+logger = get_logger(__name__)
 
 
 class ConversionProgress:
@@ -55,9 +58,9 @@ class ConverterService:
         try:
             if os.path.exists(output_path):
                 os.remove(output_path)
-                print(f"[转换服务] 已删除未完成输出: {output_path}")
+                logger.info("已删除未完成输出: %s", output_path)
         except OSError as exc:
-            print(f"[转换服务] 删除未完成输出失败: {output_path} - {exc}")
+            logger.warning("删除未完成输出失败: %s - %s", output_path, exc)
 
     @staticmethod
     def build_output_path(input_path: str, output_dir: str) -> str:
@@ -92,18 +95,16 @@ class ConverterService:
         Returns:
             转换是否成功
         """
-        print(f"[转换服务] 开始转换: {input_path}")
-        print(f"[转换服务] 输出路径: {output_path}")
-        print(f"[转换服务] 转换模式: 保留视频流，音频转换为PCM 24bit")
+        logger.info("开始转换: input=%s output=%s", input_path, output_path)
 
         def report_error(message: str) -> None:
-            print(f"[转换服务] 错误: {message}")
+            logger.error(message)
             if error_callback:
                 error_callback(message)
         
         try:
             if stop_event and stop_event.is_set():
-                print("[转换服务] 检测到取消请求，跳过本次转换")
+                logger.info("检测到取消请求，跳过本次转换: %s", input_path)
                 return False
 
             ffmpeg_path = find_ffmpeg_executable()
@@ -118,12 +119,12 @@ class ConverterService:
             except OSError as exc:
                 report_error(f"无法创建输出目录: {output_dir} ({exc})")
                 return False
-            print(f"[转换服务] 确保输出目录存在: {output_dir}")
+            logger.info("确保输出目录存在: %s", output_dir)
             
             # 获取文件信息，检查采样率
             file_info = FFmpegService.get_file_info(input_path)
             sample_rate = file_info.get('sample_rate') if file_info else None
-            print(f"[转换服务] 检测到采样率: {sample_rate} Hz")
+            logger.info("检测到采样率: %s Hz", sample_rate)
             
             # 构建ffmpeg命令 - 保留视频流，只转换音频为PCM 24bit
             cmd = [
@@ -136,12 +137,12 @@ class ConverterService:
             # 对于采样率小于48000的视频，转换为48000；大于等于48000的保持原采样率
             if sample_rate is not None and sample_rate >= 48000:
                 cmd.extend(['-ar', str(sample_rate)])  # 保持原采样率
-                print(f"[转换服务] 保持原采样率 {sample_rate} Hz")
+                logger.info("保持原采样率 %s Hz", sample_rate)
             elif sample_rate is not None and sample_rate < 48000:
                 cmd.extend(['-ar', '48000'])  # 转换为48000采样率
-                print(f"[转换服务] 将采样率 {sample_rate} Hz 转换为 48000 Hz")
+                logger.info("将采样率 %s Hz 转换为 48000 Hz", sample_rate)
             else:
-                print(f"[转换服务] 采样率信息获取失败，使用ffmpeg默认处理")
+                logger.warning("采样率信息获取失败，使用 ffmpeg 默认处理")
             
             cmd.extend([
                 '-f', 'mov',  # MOV容器格式
@@ -149,7 +150,7 @@ class ConverterService:
                 output_path
             ])
             
-            print(f"[转换服务] 执行命令: {' '.join(cmd)}")
+            logger.info("执行命令: %s", " ".join(cmd))
             
             # 执行转换
             process = subprocess.Popen(
@@ -160,19 +161,19 @@ class ConverterService:
                 encoding='utf-8'
             )
             
-            print(f"[转换服务] 进程ID: {process.pid}")
+            logger.info("ffmpeg 进程ID: %s", process.pid)
             
             # 解析进度信息
             duration = None
-            print("[转换服务] 开始解析ffmpeg输出...")
+            logger.info("开始解析 ffmpeg 输出")
             
             for line in process.stdout:
                 if stop_event and stop_event.is_set():
-                    print("[转换服务] 收到取消请求，尝试终止ffmpeg进程")
+                    logger.info("收到取消请求，尝试终止 ffmpeg 进程")
                     ConverterService._terminate_process(process)
                     ConverterService._remove_incomplete_output(output_path)
                     return False
-                print(f"[ffmpeg输出] {line.strip()}")
+                logger.info("[ffmpeg] %s", line.strip())
                 
                 if progress_callback:
                     # 尝试解析时长信息
@@ -181,9 +182,9 @@ class ConverterService:
                             time_str = line.split("Duration:")[1].split(",")[0].strip()
                             h, m, s = time_str.split(':')
                             duration = float(h) * 3600 + float(m) * 60 + float(s)
-                            print(f"[转换服务] 解析到时长: {duration}秒")
+                            logger.info("解析到时长: %s 秒", duration)
                         except Exception as e:
-                            print(f"[转换服务] 解析时长失败: {e}")
+                            logger.warning("解析时长失败: %s", e)
                     
                     # 尝试解析当前时间
                     if duration is not None and "time=" in line:
@@ -192,28 +193,28 @@ class ConverterService:
                             h, m, s = time_str.split(':')
                             current_time = float(h) * 3600 + float(m) * 60 + float(s)
                             progress = min(100.0, (current_time / duration) * 100)
-                            print(f"[转换服务] 进度更新: {progress:.1f}%")
+                            logger.info("进度更新: %.1f%%", progress)
                             progress_callback(progress)
                         except Exception as e:
-                            print(f"[转换服务] 解析进度失败: {e}")
+                            logger.warning("解析进度失败: %s", e)
             
             # 等待进程完成
-            print("[转换服务] 等待进程完成...")
+            logger.info("等待 ffmpeg 进程完成")
             if stop_event and stop_event.is_set():
-                print("[转换服务] 收到取消请求，终止等待")
+                logger.info("收到取消请求，终止等待")
                 ConverterService._terminate_process(process)
                 ConverterService._remove_incomplete_output(output_path)
                 return False
             return_code = process.wait()
-            print(f"[转换服务] 进程返回码: {return_code}")
+            logger.info("进程返回码: %s", return_code)
             
             if return_code == 0:
                 # 检查输出文件是否存在
                 if os.path.exists(output_path):
                     file_size = os.path.getsize(output_path)
-                    print(f"[转换服务] 转换成功！输出文件大小: {file_size} 字节")
+                    logger.info("转换成功，输出文件大小: %s 字节", file_size)
                 else:
-                    print(f"[转换服务] 警告: 进程成功但输出文件不存在: {output_path}")
+                    logger.warning("进程成功但输出文件不存在: %s", output_path)
                 
                 if progress_callback:
                     progress_callback(100.0)
@@ -229,7 +230,7 @@ class ConverterService:
         except Exception as e:
             report_error(f"转换出错: {e}")
             import traceback
-            print(f"[转换服务] 错误详情: {traceback.format_exc()}")
+            logger.error("错误详情: %s", traceback.format_exc())
             ConverterService._remove_incomplete_output(output_path)
             return False
     
@@ -251,8 +252,7 @@ class ConverterService:
         Returns:
             每个文件转换是否成功的结果列表
         """
-        print(f"[批量转换] 开始多线程批量转换，共 {len(input_files)} 个文件，最大并发数: {max_workers}")
-        print(f"[批量转换] 输出目录: {output_dir}")
+        logger.info("开始批量转换: files=%s max_workers=%s output_dir=%s", len(input_files), max_workers, output_dir)
         
         # 确保输出目录存在
         os.makedirs(output_dir, exist_ok=True)
@@ -304,11 +304,11 @@ class ConverterService:
                 print(f"[多线程转换] 检测到取消请求，跳过文件: {input_path}")
                 return file_index, False
             
-            print(f"[多线程转换] 开始处理文件 {file_index+1}/{len(input_files)}: {input_path}")
+            logger.info("开始处理文件 %s/%s: %s", file_index + 1, len(input_files), input_path)
             
             # 检查输入文件是否存在
             if not os.path.exists(input_path):
-                print(f"[多线程转换] 错误: 输入文件不存在: {input_path}")
+                logger.error("输入文件不存在: %s", input_path)
                 with completed_lock:
                     per_file_errors[file_index] = "输入文件不存在。"
                 return file_index, False
@@ -324,7 +324,7 @@ class ConverterService:
             
             # 生成输出文件名
             output_path = ConverterService.build_output_path(input_path, output_dir)
-            print(f"[多线程转换] 输出路径: {output_path}")
+            logger.info("输出路径: %s", output_path)
             
             # 单文件进度回调（线程安全）
             def file_progress(p):
@@ -363,7 +363,7 @@ class ConverterService:
             # 处理完成的任务
             for future in as_completed(future_to_index):
                 if stop_event and stop_event.is_set():
-                    print("[多线程转换] 检测到取消请求，停止处理新任务")
+                    logger.info("检测到取消请求，停止处理新任务")
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
                 
@@ -394,7 +394,7 @@ class ConverterService:
                     
                     emit_progress()
                     
-                    print(f"[多线程转换] 文件 {file_index+1} 处理完成，成功: {success}")
+                    logger.info("文件 %s 处理完成，成功=%s", file_index + 1, success)
         
         # 检查是否被取消
         if stop_event and stop_event.is_set():
@@ -417,7 +417,7 @@ class ConverterService:
         if progress_callback:
             progress_callback(progress_info.snapshot())
         
-        print(f"[多线程转换] 批量转换完成，结果: {results}")
+        logger.info("批量转换完成，结果: %s", results)
         return results
     
     @staticmethod

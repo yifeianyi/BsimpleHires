@@ -10,9 +10,12 @@ from PyQt6.QtGui import QShortcut, QKeySequence
 from models import FileInfo, FileManager
 from services.ffmpeg_service import FFmpegService
 from services.converter_service import ConversionProgress
+from utils.logging_utils import get_logger
 from utils.path_utils import get_resource_path
 from workers.conversion_worker import ConversionThreadManager
 from views.progress_dialog import ProgressDialog
+
+logger = get_logger(__name__)
 
 
 class WorkPage(QWidget):
@@ -49,7 +52,7 @@ class WorkPage(QWidget):
 
         # 检查ffmpeg是否可用
         if not FFmpegService.check_ffmpeg_available():
-            print(f"警告: {FFmpegService.get_availability_error()}")
+            logger.warning(FFmpegService.get_availability_error())
 
         # UI 按钮
         self.ImportButton.clicked.connect(self.importFiles)
@@ -177,20 +180,20 @@ class WorkPage(QWidget):
     # ======================================================
     def startConversion(self):
         """开始格式转换"""
-        print(f"[WorkPage] 用户点击格式转换按钮")
+        logger.info("用户点击格式转换按钮")
         
         # 检查是否有正在进行的转换
         if self.conversion_manager.is_running():
-            print(f"[WorkPage] 警告: 已有转换任务在进行中")
+            logger.warning("已有转换任务在进行中")
             QMessageBox.warning(self, "警告", "已有转换任务正在进行中，请等待完成")
             return
         
         # 获取选中的文件
         selected_files = self.get_selected_files()
-        print(f"[WorkPage] 获取到 {len(selected_files)} 个选中文件")
+        logger.info("获取到 %s 个选中文件", len(selected_files))
         
         if not selected_files:
-            print(f"[WorkPage] 警告: 没有选中任何文件")
+            logger.warning("没有选中任何文件")
             QMessageBox.warning(self, "警告", "请先选择要转换的文件")
             return
         
@@ -199,7 +202,7 @@ class WorkPage(QWidget):
         #     print(f"[WorkPage] 选中文件 {i+1}: {file}")
         
         # 选择输出目录
-        print(f"[WorkPage] 请求用户选择输出目录")
+        logger.info("请求用户选择输出目录")
         output_dir = QFileDialog.getExistingDirectory(
             self,
             "选择输出目录",
@@ -208,10 +211,10 @@ class WorkPage(QWidget):
         )
         
         if not output_dir:
-            print(f"[WorkPage] 用户取消了输出目录选择")
+            logger.info("用户取消了输出目录选择")
             return
         
-        print(f"[WorkPage] 用户选择输出目录: {output_dir}")
+        logger.info("用户选择输出目录: %s", output_dir)
         
         # 确认对话框
         reply = QMessageBox.question(
@@ -224,21 +227,21 @@ class WorkPage(QWidget):
         )
         
         if reply != QMessageBox.StandardButton.Yes:
-            print(f"[WorkPage] 用户取消了转换操作")
+            logger.info("用户取消了转换操作")
             return
         
-        print(f"[WorkPage] 用户确认开始转换")
+        logger.info("用户确认开始转换")
         self.cancel_requested = False
         
         # 创建并显示进度对话框
-        print(f"[WorkPage] 创建进度对话框")
+        logger.info("创建进度对话框")
         self.show_progress_dialog(len(selected_files))
         
         # 启动转换
-        print(f"[WorkPage] 启动多线程转换管理器")
+        logger.info("启动多线程转换管理器")
         # 根据文件数量动态设置并发数，最多4个线程
         max_workers = min(4, max(2, len(selected_files) // 2))
-        print(f"[WorkPage] 使用并发线程数: {max_workers}")
+        logger.info("使用并发线程数: %s", max_workers)
         
         success = self.conversion_manager.start_conversion(
             selected_files,
@@ -250,7 +253,7 @@ class WorkPage(QWidget):
         )
         
         if not success:
-            print(f"[WorkPage] 错误: 无法启动转换任务")
+            logger.error("无法启动转换任务")
             self.progress_dialog.close()
             QMessageBox.critical(self, "错误", "无法启动转换任务")
         # else:
@@ -311,11 +314,11 @@ class WorkPage(QWidget):
         
         # 使用show()而不是exec()来避免阻塞
         self.progress_dialog.show()
-        print(f"[WorkPage] 进度对话框已显示，共 {total_files} 个文件")
+        logger.info("进度对话框已显示，共 %s 个文件", total_files)
     
     def on_cancel_conversion(self):
         """处理用户取消转换请求"""
-        print(f"[WorkPage] 用户请求取消转换")
+        logger.info("用户请求取消转换")
         
         reply = QMessageBox.question(
             self,
@@ -325,7 +328,7 @@ class WorkPage(QWidget):
         )
         
         if reply == QMessageBox.StandardButton.Yes:
-            print(f"[WorkPage] 用户确认取消转换")
+            logger.info("用户确认取消转换")
             self.cancel_requested = True
             # 停止转换
             self.conversion_manager.stop_conversion()
@@ -338,7 +341,7 @@ class WorkPage(QWidget):
     
     def on_conversion_progress(self, progress_info: ConversionProgress):
         """转换进度更新"""
-        print(f"[WorkPage] 进度更新: {progress_info.current_file} - {progress_info.current_progress:.1f}% - {progress_info.status}")
+        logger.info("进度更新: %s - %.1f%% - %s", progress_info.current_file, progress_info.current_progress, progress_info.status)
         
         # 更新进度对话框
         if self.progress_dialog:
@@ -346,13 +349,13 @@ class WorkPage(QWidget):
     
     def on_conversion_finished(self, results: list[bool]):
         """转换完成"""
-        print(f"[WorkPage] 转换完成回调，结果: {results}")
+        logger.info("转换完成回调，结果: %s", results)
         
         # 统计结果
         success_count = sum(results)
         total_count = len(results)
         
-        print(f"[WorkPage] 转换统计: 成功 {success_count}/{total_count}")
+        logger.info("转换统计: 成功 %s/%s", success_count, total_count)
         
         # 更新进度对话框
         if self.progress_dialog:
@@ -372,14 +375,14 @@ class WorkPage(QWidget):
             return
 
         if success_count == total_count:
-            print(f"[WorkPage] 所有文件转换成功")
+            logger.info("所有文件转换成功")
             QMessageBox.information(
                 self,
                 "转换完成",
                 f"所有 {total_count} 个文件转换成功！"
             )
         else:
-            print(f"[WorkPage] 部分文件转换失败")
+            logger.warning("部分文件转换失败")
             QMessageBox.warning(
                 self,
                 "转换完成",
@@ -389,7 +392,7 @@ class WorkPage(QWidget):
     
     def on_conversion_error(self, error_msg: str):
         """转换错误"""
-        print(f"[WorkPage] 转换错误回调: {error_msg}")
+        logger.error("转换错误回调: %s", error_msg)
         
         # 更新进度对话框
         if self.progress_dialog:

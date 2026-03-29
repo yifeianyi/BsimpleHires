@@ -5,6 +5,9 @@ import threading
 
 from services.ffmpeg_service import FFmpegService
 from services.converter_service import ConverterService, ConversionProgress
+from utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class ConversionWorker(QObject):
@@ -26,37 +29,35 @@ class ConversionWorker(QObject):
     
     def run(self):
         """执行转换任务"""
-        print(f"[工作线程] 开始执行转换任务")
-        print(f"[工作线程] 输入文件数量: {len(self.input_files)}")
-        print(f"[工作线程] 输出目录: {self.output_dir}")
+        logger.info("工作线程开始执行转换任务: files=%s output_dir=%s", len(self.input_files), self.output_dir)
         
         try:
             self._is_running = True
-            print(f"[工作线程] 线程状态设置为运行中")
+            logger.info("线程状态设置为运行中")
             
             # 检查ffmpeg是否可用
-            print(f"[工作线程] 检查ffmpeg可用性...")
+            logger.info("检查 ffmpeg 可用性")
             if not ConverterService.check_ffmpeg_available():
                 error_msg = FFmpegService.get_availability_error() or "未检测到 ffmpeg，无法进行转换。"
-                print(f"[工作线程] 错误: {error_msg}")
+                logger.error(error_msg)
                 self.error.emit(error_msg)
                 return
             
-            print(f"[工作线程] ffmpeg检查通过")
+            logger.info("ffmpeg 检查通过")
             
             # 确保输出目录存在
-            print(f"[工作线程] 创建输出目录...")
+            logger.info("创建输出目录")
             os.makedirs(self.output_dir, exist_ok=True)
-            print(f"[工作线程] 输出目录已确保存在: {self.output_dir}")
+            logger.info("输出目录已确保存在: %s", self.output_dir)
             
             # 进度回调函数
             def progress_callback(progress_info: ConversionProgress):
                 if self._is_running:
-                    print(f"[工作线程] 进度更新: {progress_info.current_file} - {progress_info.current_progress:.1f}% - {progress_info.status}")
+                    logger.info("进度更新: %s - %.1f%% - %s", progress_info.current_file, progress_info.current_progress, progress_info.status)
                     self.progress_updated.emit(progress_info)
             
             # 执行批量转换
-            print(f"[工作线程] 开始执行多线程批量转换，最大并发数: {self.max_workers}")
+            logger.info("开始执行多线程批量转换，最大并发数: %s", self.max_workers)
             results = ConverterService.batch_convert(
                 self.input_files, 
                 self.output_dir,
@@ -65,22 +66,22 @@ class ConversionWorker(QObject):
                 max_workers=self.max_workers
             )
             
-            print(f"[工作线程] 批量转换完成，结果: {results}")
+            logger.info("批量转换完成，结果: %s", results)
             
             if self.stop_event.is_set():
-                print(f"[工作线程] 发送取消信号")
+                logger.info("发送取消信号")
                 self.cancelled.emit(results)
             elif self._is_running:
-                print(f"[工作线程] 发送完成信号")
+                logger.info("发送完成信号")
                 self.finished.emit(results)
             else:
-                print(f"[工作线程] 任务被取消，不发送完成信号")
+                logger.info("任务被取消，不发送完成信号")
                 
         except Exception as e:
             error_msg = f"转换过程中出现错误: {str(e)}"
-            print(f"[工作线程] 异常: {error_msg}")
+            logger.error("工作线程异常: %s", error_msg)
             import traceback
-            print(f"[工作线程] 异常详情: {traceback.format_exc()}")
+            logger.error("异常详情: %s", traceback.format_exc())
             
             if self._is_running:
                 self.error.emit(error_msg)
@@ -114,23 +115,21 @@ class ConversionThreadManager:
         Returns:
             是否成功启动
         """
-        print(f"[线程管理器] 请求启动多线程转换任务，最大并发数: {max_workers}")
-        print(f"[线程管理器] 输入文件: {input_files}")
-        print(f"[线程管理器] 输出目录: {output_dir}")
+        logger.info("请求启动多线程转换任务，最大并发数=%s，输出目录=%s", max_workers, output_dir)
         
         # 如果已有任务在运行，先停止
         if self.current_thread and self.current_thread.isRunning():
-            print(f"[线程管理器] 警告: 已有任务在运行，拒绝启动新任务")
+            logger.warning("已有任务在运行，拒绝启动新任务")
             return False
         
         # 创建工作线程
-        print(f"[线程管理器] 创建新的工作线程")
+        logger.info("创建新的工作线程")
         self.current_thread = QThread()
         self.current_worker = ConversionWorker(input_files, output_dir, max_workers)
         self.current_worker.moveToThread(self.current_thread)
         
         # 连接信号
-        print(f"[线程管理器] 连接信号和槽")
+        logger.info("连接信号和槽")
         self.current_thread.started.connect(self.current_worker.run)
         self.current_worker.finished.connect(self._on_finished)
         self.current_worker.cancelled.connect(self._on_finished)
@@ -140,19 +139,19 @@ class ConversionThreadManager:
         # 连接用户回调
         if progress_callback:
             self.current_worker.progress_updated.connect(progress_callback)
-            print(f"[线程管理器] 已连接进度回调")
+            logger.info("已连接进度回调")
         if finished_callback:
             self.current_worker.finished.connect(finished_callback)
             self.current_worker.cancelled.connect(finished_callback)
-            print(f"[线程管理器] 已连接完成回调")
+            logger.info("已连接完成回调")
         if error_callback:
             self.current_worker.error.connect(error_callback)
-            print(f"[线程管理器] 已连接错误回调")
+            logger.info("已连接错误回调")
         
         # 启动线程
-        print(f"[线程管理器] 启动工作线程")
+        logger.info("启动工作线程")
         self.current_thread.start()
-        print(f"[线程管理器] 工作线程已启动")
+        logger.info("工作线程已启动")
         return True
     
     def stop_conversion(self):
