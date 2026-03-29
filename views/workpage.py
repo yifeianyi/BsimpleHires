@@ -1,7 +1,7 @@
-﻿import os
+import os
 
 from PyQt6 import uic
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import QThread, Qt
 from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
     QMessageBox,
+    QProgressDialog,
     QPushButton,
     QTableWidgetItem,
     QWidget,
@@ -23,6 +24,7 @@ from utils.path_utils import get_resource_path
 from views.progress_dialog import ProgressDialog
 from views.settings_dialog import SettingsDialog
 from workers.conversion_worker import ConversionThreadManager
+from workers.import_worker import ImportWorker
 
 logger = get_logger(__name__)
 
@@ -53,6 +55,12 @@ class WorkPage(QWidget):
         self.progress_dialog = None
         self.cancel_requested = False
 
+        self.import_thread: QThread | None = None
+        self.import_worker: ImportWorker | None = None
+        self.import_progress_dialog: QProgressDialog | None = None
+        self.import_in_progress = False
+        self.pending_duplicate_count = 0
+
         if not FFmpegService.check_ffmpeg_available():
             logger.warning(FFmpegService.get_availability_error())
 
@@ -80,6 +88,10 @@ class WorkPage(QWidget):
         self.SettingsButton.clicked.connect(self.openSettingsDialog)
 
     def importFiles(self):
+        if self.import_in_progress:
+            QMessageBox.information(self, "正在导入", "正在读取文件信息，请稍候。")
+            return
+
         paths, _ = QFileDialog.getOpenFileNames(
             self,
             "选择视频/音频",
@@ -90,33 +102,24 @@ class WorkPage(QWidget):
         if not paths:
             return
 
+        unique_paths: list[str] = []
         duplicate_count = 0
         for path in paths:
             if self.fileManager.find_by_path(path):
                 duplicate_count += 1
                 continue
+            unique_paths.append(path)
 
-            info = self.fileManager.add_file(path)
-            media_info = FFmpegService.get_file_info(path)
-            if media_info:
-                info.duration = media_info.get("duration")
-                info.size = media_info.get("size")
-                info.audio_format = media_info.get("audio_format")
-                info.video_format = media_info.get("video_format")
-                info.bit_rate = media_info.get("bit_rate")
-                info.sample_rate = media_info.get("sample_rate")
-                info.channels = media_info.get("channels")
-                info.resolution = media_info.get("resolution")
-                info.fps = media_info.get("fps")
-
-            self.addFileToTable(info)
-
-        if duplicate_count:
+        if not unique_paths:
             QMessageBox.information(
                 self,
                 "已跳过重复文件",
                 f"有 {duplicate_count} 个已在列表中的文件被跳过。",
             )
+            return
+
+        self.pending_duplicate_count = duplicate_count
+        self._start_import(unique_paths)
 
     def addFileToTable(self, info: FileInfo):
         row = self.tableWidget.rowCount()
@@ -147,6 +150,10 @@ class WorkPage(QWidget):
 
     def startConversion(self):
         logger.info("用户点击格式转换按钮")
+
+        if self.import_in_progress:
+            QMessageBox.warning(self, "请稍候", "正在读取文件信息，请等待导入完成后再开始转换。")
+            return
 
         if self.conversion_manager.is_running():
             logger.warning("已有转换任务在进行中")
@@ -220,6 +227,10 @@ class WorkPage(QWidget):
         return selected_files
 
     def removeSelectedRows(self):
+        if self.import_in_progress:
+            QMessageBox.information(self, "正在导入", "正在读取文件信息，请稍候。")
+            return
+
         selected_rows = sorted({index.row() for index in self.tableWidget.selectionModel().selectedRows()})
         if not selected_rows:
             QMessageBox.information(self, "提示", "请先在列表中选择要移除的文件。")
@@ -230,6 +241,10 @@ class WorkPage(QWidget):
             self.tableWidget.removeRow(row)
 
     def clearFiles(self):
+        if self.import_in_progress:
+            QMessageBox.information(self, "正在导入", "正在读取文件信息，请稍候。")
+            return
+
         if self.tableWidget.rowCount() == 0:
             return
 
@@ -314,6 +329,10 @@ class WorkPage(QWidget):
         QMessageBox.critical(self, "转换错误", error_msg)
 
     def openSettingsDialog(self):
+        if self.import_in_progress:
+            QMessageBox.information(self, "正在导入", "正在读取文件信息，请稍候。")
+            return
+
         dialog = SettingsDialog(self.settings, self)
         if not dialog.exec():
             return
@@ -334,6 +353,100 @@ class WorkPage(QWidget):
             os.startfile(self.last_output_dir)
         except OSError as exc:
             logger.warning("打开输出目录失败: %s - %s", self.last_output_dir, exc)
+
+    def _start_import(self, input_files: list[str]):
+        self.import_in_progress = True
+        self._set_import_ui_enabled(False)
+        self._show_import_progress_dialog(len(input_files))
+
+        self.import_thread = QThread(self)
+        self.import_worker = ImportWorker(input_files)
+        self.import_worker.moveToThread(self.import_thread)
+
+        self.import_thread.started.connect(self.import_worker.run)
+        self.import_worker.progress_updated.connect(self._on_import_progress)
+        self.import_worker.file_loaded.connect(self._on_import_file_loaded)
+        self.import_worker.finished.connect(self._on_import_finished)
+        self.import_worker.error.connect(self._on_import_error)
+        self.import_worker.finished.connect(self.import_thread.quit)
+        self.import_worker.error.connect(self.import_thread.quit)
+        self.import_thread.finished.connect(self._cleanup_import_thread)
+        self.import_thread.start()
+
+    def _show_import_progress_dialog(self, total_files: int):
+        self.import_progress_dialog = QProgressDialog("正在读取媒体信息...", None, 0, total_files, self)
+        self.import_progress_dialog.setWindowTitle("导入中")
+        self.import_progress_dialog.setWindowModality(Qt.WindowModality.ApplicationModal)
+        self.import_progress_dialog.setMinimumDuration(0)
+        self.import_progress_dialog.setAutoClose(False)
+        self.import_progress_dialog.setAutoReset(False)
+        self.import_progress_dialog.setCancelButton(None)
+        self.import_progress_dialog.setValue(0)
+        self.import_progress_dialog.show()
+
+    def _on_import_progress(self, current: int, total: int, filename: str):
+        if not self.import_progress_dialog:
+            return
+
+        self.import_progress_dialog.setMaximum(total)
+        self.import_progress_dialog.setValue(current - 1)
+        self.import_progress_dialog.setLabelText(f"正在读取媒体信息 ({current}/{total})...\n{filename}")
+
+    def _on_import_file_loaded(self, info: FileInfo):
+        stored_info = self.fileManager.add_file(info.filepath)
+        stored_info.duration = info.duration
+        stored_info.size = info.size
+        stored_info.audio_format = info.audio_format
+        stored_info.video_format = info.video_format
+        stored_info.bit_rate = info.bit_rate
+        stored_info.sample_rate = info.sample_rate
+        stored_info.channels = info.channels
+        stored_info.resolution = info.resolution
+        stored_info.fps = info.fps
+        self.addFileToTable(stored_info)
+
+    def _on_import_finished(self):
+        if self.import_progress_dialog:
+            self.import_progress_dialog.setValue(self.import_progress_dialog.maximum())
+            self.import_progress_dialog.close()
+            self.import_progress_dialog = None
+
+        if self.pending_duplicate_count:
+            QMessageBox.information(
+                self,
+                "已跳过重复文件",
+                f"有 {self.pending_duplicate_count} 个已在列表中的文件被跳过。",
+            )
+
+        self.pending_duplicate_count = 0
+        self.import_in_progress = False
+        self._set_import_ui_enabled(True)
+
+    def _on_import_error(self, error_msg: str):
+        logger.error("导入错误回调: %s", error_msg)
+        if self.import_progress_dialog:
+            self.import_progress_dialog.close()
+            self.import_progress_dialog = None
+
+        self.pending_duplicate_count = 0
+        self.import_in_progress = False
+        self._set_import_ui_enabled(True)
+        QMessageBox.critical(self, "导入错误", error_msg)
+
+    def _cleanup_import_thread(self):
+        if self.import_worker:
+            self.import_worker.deleteLater()
+        if self.import_thread:
+            self.import_thread.deleteLater()
+        self.import_worker = None
+        self.import_thread = None
+
+    def _set_import_ui_enabled(self, enabled: bool):
+        self.ImportButton.setEnabled(enabled)
+        self.WorkButton.setEnabled(enabled)
+        self.RemoveButton.setEnabled(enabled)
+        self.ClearButton.setEnabled(enabled)
+        self.SettingsButton.setEnabled(enabled)
 
     def _set_cell(self, row: int, col_name: str, text: str):
         col_def = self.COLS[col_name]

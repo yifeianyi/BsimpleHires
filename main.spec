@@ -14,6 +14,7 @@ hidden_imports = [
     'services.ffmpeg_service',
     'services.settings_service',
     'workers.conversion_worker',
+    'workers.import_worker',
     'models',
     'ui.UI_main',
     'ui.UI_workPage',
