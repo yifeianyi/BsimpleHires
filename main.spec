@@ -28,6 +28,7 @@ a = Analysis(
     binaries=[],
     datas=[
         ('assets/logo.ico', 'assets'),
+        ('ffmpeg', 'ffmpeg'),
         ('ui', 'ui'),
     ],
     hiddenimports=hidden_imports,
