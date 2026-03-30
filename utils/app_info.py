@@ -1,6 +1,6 @@
 APP_NAME = "BsimpleHires"
-APP_VERSION = "v0.2.0"
+APP_VERSION = "v0.2.1"
 AUTHOR_NAME = "逸非安逸"
 AUTHOR_DESCRIPTION = "咻咻满的歌迷"
 XIUXIUMAN_BILIBILI_URL = "https://space.bilibili.com/37754047"
-GITHUB_URL = "https://github.com/yifeianyi/BsimpleHires"
+GITHUB_URL = "https://github.com/yifeianyi"
