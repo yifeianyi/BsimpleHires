@@ -10,6 +10,7 @@ hidden_imports = [
     'views.workpage',
     'views.progress_dialog',
     'views.settings_dialog',
+    'views.version_dialog',
     'services.converter_service',
     'services.ffmpeg_service',
     'services.settings_service',
@@ -19,6 +20,7 @@ hidden_imports = [
     'ui.UI_main',
     'ui.UI_workPage',
     'ui.UI_ProgressBar',
+    'utils.app_info',
 ]
 
 block_cipher = None
